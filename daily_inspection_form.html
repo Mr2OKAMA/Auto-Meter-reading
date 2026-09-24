@@ -675,8 +675,17 @@
 
       clearPreviousValues();
 
+      const uniqueFacilityItems = new Map();
       jsonData['データ一覧'].forEach(item => {
         const facility = getFacilityConfig(item);
+        if (!facility) return;
+        if (!uniqueFacilityItems.has(facility.key)) {
+          uniqueFacilityItems.set(facility.key, item);
+        }
+      });
+
+      uniqueFacilityItems.forEach((item, facilityKey) => {
+        const facility = facilityByKey[facilityKey];
         if (!facility) return;
 
         if (facility.hasTime) {
