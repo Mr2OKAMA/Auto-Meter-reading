@@ -349,6 +349,7 @@
     const facilityByKey = Object.fromEntries(facilities.map(facility => [facility.key, facility]));
     const facilityByName = Object.fromEntries(facilities.map(facility => [facility.name, facility]));
     const DRAFT_STORAGE_KEY = 'auto_meter_reading_inspection_draft_v2';
+    const LEGACY_DRAFT_STORAGE_KEYS = ['auto_meter_reading_inspection_draft_v1'];
     let draftTimer;
 
     function localDateString(date = new Date()) {
@@ -510,6 +511,7 @@
     function saveDraft(showMessage = true) {
       try {
         localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(getDraftData()));
+        LEGACY_DRAFT_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
         const savedAt = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
         document.getElementById('draftStatus').textContent = `一時保存済み（${savedAt}）`;
         if (showMessage) showStatus('入力内容を一時保存しました', 'success');
@@ -522,7 +524,17 @@
     function readDraft() {
       try {
         const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
-        return raw ? JSON.parse(raw) : null;
+        if (raw) return JSON.parse(raw);
+
+        for (const legacyKey of LEGACY_DRAFT_STORAGE_KEYS) {
+          const legacyRaw = localStorage.getItem(legacyKey);
+          if (!legacyRaw) continue;
+          const draft = JSON.parse(legacyRaw);
+          localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+          return draft;
+        }
+
+        return null;
       } catch (error) {
         console.error(error);
         return null;
@@ -589,6 +601,7 @@
 
     function clearDraft(showMessage = true) {
       localStorage.removeItem(DRAFT_STORAGE_KEY);
+      LEGACY_DRAFT_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
       document.getElementById('draftStatus').textContent = '';
       if (showMessage) showStatus('一時保存データを削除しました', 'success');
     }
