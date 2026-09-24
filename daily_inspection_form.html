@@ -531,6 +531,7 @@
           if (!legacyRaw) continue;
           const draft = JSON.parse(legacyRaw);
           localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+          localStorage.removeItem(legacyKey);
           return draft;
         }
 
