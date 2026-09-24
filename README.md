@@ -4,7 +4,7 @@
 
 ## サイト
 
-- [日常点検フォームを開く](./daily_inspection_form.html)
+- [日常点検フォームを開く](https://mr2okama.github.io/Auto-Meter-reading/daily_inspection_form.html )
 - [リポジトリ](https://github.com/Mr2OKAMA/Auto-Meter-reading)
 
 > GitHub Pagesで公開する場合は、リポジトリの **Settings → Pages** で公開設定を行ってください。公開後のサイトURLは通常、`https://mr2okama.github.io/Auto-Meter-reading/daily_inspection_form.html` です。
