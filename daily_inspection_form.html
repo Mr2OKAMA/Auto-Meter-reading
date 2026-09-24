@@ -718,61 +718,69 @@
       URL.revokeObjectURL(url);
     }
 
-    renderFacilitySections();
-    attachTimeInputHandlers();
-    attachInputHandlers();
+    function startApp() {
+      renderFacilitySections();
+      attachTimeInputHandlers();
+      attachInputHandlers();
 
-    document.getElementById('saveDraftButton').addEventListener('click', () => saveDraft(true));
-    document.getElementById('restoreDraftButton').addEventListener('click', () => restoreDraft(true));
-    document.getElementById('clearDraftButton').addEventListener('click', () => {
-      if (confirm('一時保存データを削除しますか？')) clearDraft(true);
-    });
+      document.getElementById('saveDraftButton').addEventListener('click', () => saveDraft(true));
+      document.getElementById('restoreDraftButton').addEventListener('click', () => restoreDraft(true));
+      document.getElementById('clearDraftButton').addEventListener('click', () => {
+        if (confirm('一時保存データを削除しますか？')) clearDraft(true);
+      });
 
-    document.getElementById('fileInput').addEventListener('change', event => handleFile(event.target.files[0]));
-    const fileLabel = document.querySelector('.file-input-label');
-    fileLabel.addEventListener('dragover', event => {
-      event.preventDefault();
-      fileLabel.style.backgroundColor = '#cffafe';
-    });
-    fileLabel.addEventListener('dragleave', () => {
-      fileLabel.style.backgroundColor = '#f0f9ff';
-    });
-    fileLabel.addEventListener('drop', event => {
-      event.preventDefault();
-      fileLabel.style.backgroundColor = '#f0f9ff';
-      handleFile(event.dataTransfer.files[0]);
-    });
+      document.getElementById('fileInput').addEventListener('change', event => handleFile(event.target.files[0]));
+      const fileLabel = document.querySelector('.file-input-label');
+      fileLabel.addEventListener('dragover', event => {
+        event.preventDefault();
+        fileLabel.style.backgroundColor = '#cffafe';
+      });
+      fileLabel.addEventListener('dragleave', () => {
+        fileLabel.style.backgroundColor = '#f0f9ff';
+      });
+      fileLabel.addEventListener('drop', event => {
+        event.preventDefault();
+        fileLabel.style.backgroundColor = '#f0f9ff';
+        handleFile(event.dataTransfer.files[0]);
+      });
 
-    document.getElementById('inspectionForm').addEventListener('submit', event => {
-      event.preventDefault();
-      if (!event.currentTarget.reportValidity()) return;
+      document.getElementById('inspectionForm').addEventListener('submit', event => {
+        event.preventDefault();
+        if (!event.currentTarget.reportValidity()) return;
 
-      const data = buildExportData();
-      const filename = `inspection_summary_${data['点検日'].replace(/-/g, '')}.json`;
-      downloadJson(data, filename);
-      clearDraft(false);
-      showStatus(`✅ ${filename} をダウンロードしました。一時保存を削除しました`, 'success');
-    });
-
-    document.getElementById('inspectionForm').addEventListener('reset', () => {
-      setTimeout(() => {
-        clearPreviousValues();
-        document.querySelectorAll('.time-actions').forEach(element => element.classList.remove('visible'));
+        const data = buildExportData();
+        const filename = `inspection_summary_${data['点検日'].replace(/-/g, '')}.json`;
+        downloadJson(data, filename);
         clearDraft(false);
-        initializeForm();
-      }, 0);
-    });
+        showStatus(`✅ ${filename} をダウンロードしました。一時保存を削除しました`, 'success');
+      });
 
-    window.addEventListener('beforeunload', () => saveDraft(false));
+      document.getElementById('inspectionForm').addEventListener('reset', () => {
+        setTimeout(() => {
+          clearPreviousValues();
+          document.querySelectorAll('.time-actions').forEach(element => element.classList.remove('visible'));
+          clearDraft(false);
+          initializeForm();
+        }, 0);
+      });
 
-    initializeForm();
-    const existingDraft = readDraft();
-    if (existingDraft && hasDraftInput(existingDraft)) {
-      const savedAt = existingDraft.savedAt ? new Date(existingDraft.savedAt).toLocaleString('ja-JP') : '日時不明';
-      document.getElementById('draftStatus').textContent = `一時保存あり（${savedAt}）`;
-      setTimeout(() => {
-        if (confirm(`一時保存データ（${savedAt}）を復元しますか？`)) restoreDraft(true);
-      }, 100);
+      window.addEventListener('beforeunload', () => saveDraft(false));
+
+      initializeForm();
+      const existingDraft = readDraft();
+      if (existingDraft && hasDraftInput(existingDraft)) {
+        const savedAt = existingDraft.savedAt ? new Date(existingDraft.savedAt).toLocaleString('ja-JP') : '日時不明';
+        document.getElementById('draftStatus').textContent = `一時保存あり（${savedAt}）`;
+        setTimeout(() => {
+          if (confirm(`一時保存データ（${savedAt}）を復元しますか？`)) restoreDraft(true);
+        }, 100);
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', startApp);
+    } else {
+      startApp();
     }
   </script>
 </body>
