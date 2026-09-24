@@ -511,7 +511,6 @@
     function saveDraft(showMessage = true) {
       try {
         localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(getDraftData()));
-        LEGACY_DRAFT_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
         const savedAt = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
         document.getElementById('draftStatus').textContent = `一時保存済み（${savedAt}）`;
         if (showMessage) showStatus('入力内容を一時保存しました', 'success');
@@ -542,12 +541,21 @@
       }
     }
 
-    function getFacilityConfig(item) {
+    function getFacilityMatch(item) {
       if (item && typeof item === 'object') {
-        if (item['施設キー'] && facilityByKey[item['施設キー']]) return facilityByKey[item['施設キー']];
-        if (item['施設名'] && facilityByName[item['施設名']]) return facilityByName[item['施設名']];
+        if (item['施設キー'] && facilityByKey[item['施設キー']]) {
+          return { facility: facilityByKey[item['施設キー']], matchedByKey: true };
+        }
+        if (item['施設名'] && facilityByName[item['施設名']]) {
+          return { facility: facilityByName[item['施設名']], matchedByKey: false };
+        }
       }
       return null;
+    }
+
+    function getFacilityConfig(item) {
+      const match = getFacilityMatch(item);
+      return match ? match.facility : null;
     }
 
     function getMeasurementValue(item, field) {
@@ -677,14 +685,16 @@
 
       const uniqueFacilityItems = new Map();
       jsonData['データ一覧'].forEach(item => {
-        const facility = getFacilityConfig(item);
-        if (!facility) return;
-        if (!uniqueFacilityItems.has(facility.key)) {
-          uniqueFacilityItems.set(facility.key, item);
+        const match = getFacilityMatch(item);
+        if (!match) return;
+
+        const existing = uniqueFacilityItems.get(match.facility.key);
+        if (!existing || (!existing.matchedByKey && match.matchedByKey)) {
+          uniqueFacilityItems.set(match.facility.key, { item, matchedByKey: match.matchedByKey });
         }
       });
 
-      uniqueFacilityItems.forEach((item, facilityKey) => {
+      uniqueFacilityItems.forEach(({ item }, facilityKey) => {
         const facility = facilityByKey[facilityKey];
         if (!facility) return;
 
