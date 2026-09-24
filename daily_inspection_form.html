@@ -65,34 +65,7 @@
         <input type="date" id="inspectionDate" required>
       </div>
 
-      <div class="space-y-4">
-        <div class="bg-white rounded-lg shadow p-4">
-          <h3 class="text-lg font-bold text-blue-600 mb-4">🏭 処理場A</h3>
-          <div class="space-y-4">
-            <div><label class="block text-sm font-medium text-gray-700 mb-2" for="timeA">点検時間</label><input type="time" id="timeA" required><div id="actionsA" class="time-actions"><button type="button" class="now-button" data-time-id="timeA">🕒 現在時間を入力</button></div><div id="prevTimeA" class="prev-value"></div></div>
-            <div><label class="block text-sm font-medium text-gray-700 mb-2" for="flowA">流量 (m³/h)</label><input type="number" id="flowA" placeholder="0" step="0.1" required><div id="prevFlowA" class="prev-value"></div></div>
-            <div><label class="block text-sm font-medium text-gray-700 mb-2" for="powerA">電力 (kWh)</label><input type="number" id="powerA" placeholder="0" step="0.1" required><div id="prevPowerA" class="prev-value"></div></div>
-          </div>
-        </div>
-
-        <div class="bg-white rounded-lg shadow p-4">
-          <h3 class="text-lg font-bold text-green-600 mb-4">🏭 処理場B</h3>
-          <div class="space-y-4">
-            <div><label class="block text-sm font-medium text-gray-700 mb-2" for="timeB">点検時間</label><input type="time" id="timeB" required><div id="actionsB" class="time-actions"><button type="button" class="now-button" data-time-id="timeB">🕒 現在時間を入力</button></div><div id="prevTimeB" class="prev-value"></div></div>
-            <div><label class="block text-sm font-medium text-gray-700 mb-2" for="flowB">流量 (m³/h)</label><input type="number" id="flowB" placeholder="0" step="0.1" required><div id="prevFlowB" class="prev-value"></div></div>
-            <div><label class="block text-sm font-medium text-gray-700 mb-2" for="powerB">電力 (kWh)</label><input type="number" id="powerB" placeholder="0" step="0.1" required><div id="prevPowerB" class="prev-value"></div></div>
-          </div>
-        </div>
-
-        <div class="bg-white rounded-lg shadow p-4">
-          <h3 class="text-lg font-bold text-orange-600 mb-4">🏭 処理場C</h3>
-          <div class="space-y-4">
-            <div><label class="block text-sm font-medium text-gray-700 mb-2" for="timeC">点検時間</label><input type="time" id="timeC" required><div id="actionsC" class="time-actions"><button type="button" class="now-button" data-time-id="timeC">🕒 現在時間を入力</button></div><div id="prevTimeC" class="prev-value"></div></div>
-            <div><label class="block text-sm font-medium text-gray-700 mb-2" for="flowC">流量 (m³/h)</label><input type="number" id="flowC" placeholder="0" step="0.1" required><div id="prevFlowC" class="prev-value"></div></div>
-            <div><label class="block text-sm font-medium text-gray-700 mb-2" for="powerC">電力 (kWh)</label><input type="number" id="powerC" placeholder="0" step="0.1" required><div id="prevPowerC" class="prev-value"></div></div>
-          </div>
-        </div>
-      </div>
+      <div id="facilitySections" class="space-y-6"></div>
 
       <div class="flex gap-3 mt-8 mb-4">
         <button type="submit" class="btn btn-primary flex-1">📥 JSONファイルとして保存</button>
@@ -102,12 +75,280 @@
   </div>
 
   <script>
-    const facilities = {
-      '処理場A': { key: 'A', time: 'timeA', flow: 'flowA', power: 'powerA' },
-      '処理場B': { key: 'B', time: 'timeB', flow: 'flowB', power: 'powerB' },
-      '処理場C': { key: 'C', time: 'timeC', flow: 'flowC', power: 'powerC' }
-    };
-    const DRAFT_STORAGE_KEY = 'auto_meter_reading_inspection_draft_v1';
+    const facilitySections = [
+      {
+        title: '流量計施設',
+        icon: '💧',
+        facilities: [
+          {
+            key: 'ryokuen',
+            name: '緑苑',
+            badge: '流量計',
+            headingClass: 'text-blue-600',
+            hasTime: true,
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'] },
+              { key: 'flow', label: '流量', unit: '×10m3', step: '0.1' }
+            ]
+          },
+          {
+            key: 'fukada_sakagura',
+            name: '深田酒倉',
+            badge: '流量計',
+            headingClass: 'text-green-600',
+            hasTime: true,
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'] },
+              { key: 'flow_fukada', label: '流量（深田）', unit: '×10m3', step: '0.1' },
+              { key: 'flow_sakagura', label: '流量（酒倉）', unit: '×10m3', step: '0.1' }
+            ]
+          },
+          {
+            key: 'kawabe',
+            name: '川辺',
+            badge: '流量計',
+            headingClass: 'text-orange-600',
+            hasTime: true,
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'] },
+              { key: 'flow', label: '流量', unit: 'm³', step: '0.1' }
+            ]
+          },
+          {
+            key: 'yaotsu',
+            name: '八百津',
+            badge: '流量計',
+            headingClass: 'text-sky-600',
+            hasTime: true,
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'] },
+              { key: 'flow', label: '流量', unit: 'm³', step: '0.1' }
+            ]
+          },
+          {
+            key: 'wachi',
+            name: '和知',
+            badge: '流量計',
+            headingClass: 'text-indigo-600',
+            hasTime: true,
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'] },
+              { key: 'flow', label: '流量', unit: 'm³', step: '0.1' }
+            ]
+          },
+          {
+            key: 'nakaedo',
+            name: '中恵土',
+            badge: '流量計',
+            headingClass: 'text-emerald-600',
+            hasTime: true,
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'] },
+              { key: 'flow', label: '流量', unit: 'm³', step: '0.1' }
+            ]
+          },
+          {
+            key: 'kawashima_daini_nonino',
+            name: '川島第二の二（環境楽園）',
+            badge: '流量計',
+            headingClass: 'text-cyan-700',
+            hasTime: true,
+            fields: [
+              { key: 'flow', label: '流量', unit: 'm³', step: '0.1' }
+            ]
+          },
+          {
+            key: 'kawashima_daini',
+            name: '川島第二',
+            badge: '流量計',
+            headingClass: 'text-violet-600',
+            hasTime: true,
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'] },
+              { key: 'flow', label: '流量', unit: 'm³', step: '0.1' }
+            ]
+          },
+          {
+            key: 'komeno',
+            name: '米野',
+            badge: '流量計',
+            headingClass: 'text-amber-700',
+            hasTime: true,
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'] },
+              { key: 'flow', label: '流量', unit: 'm³', step: '0.1' }
+            ]
+          },
+          {
+            key: 'tobu_daini',
+            name: '東部第二',
+            badge: '流量計',
+            headingClass: 'text-rose-600',
+            hasTime: true,
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'] },
+              { key: 'flow', label: '流量', unit: 'm³', step: '0.1' }
+            ]
+          },
+          {
+            key: 'shimohaguri',
+            name: '下羽栗',
+            badge: '流量計',
+            headingClass: 'text-lime-700',
+            hasTime: true,
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'] },
+              { key: 'flow', label: '流量', unit: 'm³', step: '0.1' }
+            ]
+          },
+          {
+            key: 'ginan_nishi',
+            name: '岐南西',
+            badge: '流量計',
+            headingClass: 'text-teal-700',
+            hasTime: true,
+            fields: [
+              { key: 'flow', label: '流量', unit: 'm³', step: '0.1' }
+            ]
+          },
+          {
+            key: 'umematsu',
+            name: '梅松',
+            badge: '流量計',
+            headingClass: 'text-fuchsia-600',
+            hasTime: true,
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'] },
+              { key: 'flow', label: '流量', unit: 'm³', step: '0.1' }
+            ]
+          },
+          {
+            key: 'tobu_daiichi',
+            name: '東部第一',
+            badge: '流量計',
+            headingClass: 'text-red-600',
+            hasTime: true,
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'] },
+              { key: 'flow', label: '流量', unit: 'm³', step: '0.1' }
+            ]
+          },
+          {
+            key: 'akemi',
+            name: '芥見',
+            badge: '流量計',
+            headingClass: 'text-purple-600',
+            hasTime: true,
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'] },
+              { key: 'flow', label: '流量', unit: 'm³', step: '0.1' }
+            ]
+          }
+        ]
+      },
+      {
+        title: '上水・燃料・放流口',
+        icon: '🧾',
+        facilities: [
+          {
+            key: 'kanayama_pump',
+            name: '兼山ポンプ場',
+            badge: '上水・燃料',
+            headingClass: 'text-slate-700',
+            fields: [
+              { key: 'water_meter', label: '上水メーター', unit: 'm³', step: '0.1', required: false },
+              { key: 'oil_amount', label: '小出槽 油量', unit: 'L', step: '0.1', required: false }
+            ]
+          },
+          {
+            key: 'd_point',
+            name: 'Ｄ点（中屋川排水放流口）',
+            badge: '放流口',
+            headingClass: 'text-slate-700',
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'], required: false }
+            ]
+          },
+          {
+            key: 'a_point',
+            name: 'Ａ点（三井川放流口）',
+            badge: '放流口',
+            headingClass: 'text-slate-700',
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'], required: false }
+            ]
+          },
+          {
+            key: 'kawashima_pump',
+            name: '川島ポンプ場',
+            badge: '上水',
+            headingClass: 'text-slate-700',
+            fields: [
+              { key: 'water_meter', label: '上水メーター', unit: 'm³', step: '0.1', required: false }
+            ]
+          },
+          {
+            key: 'b_point',
+            name: 'Ｂ点（中屋川放流口）',
+            badge: '放流口',
+            headingClass: 'text-slate-700',
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'], required: false }
+            ]
+          },
+          {
+            key: 'nagamori_pump',
+            name: '長森ポンプ場',
+            badge: '上水・燃料',
+            headingClass: 'text-slate-700',
+            fields: [
+              { key: 'water_meter', label: '上水メーター', unit: 'm³', step: '0.1', required: false },
+              { key: 'fuel_transfer_total', label: '地下燃料 移送カウンター値合計', unit: 'L', step: '0.1', required: false },
+              { key: 'koideso', label: '小出槽', unit: 'L', step: '0.1', required: false },
+              { key: 'well_water_meter', label: '井水メーター', unit: 'm³', step: '0.1', required: false }
+            ]
+          },
+          {
+            key: 'c_point',
+            name: 'Ｃ点（中部排水放流口）',
+            badge: '放流口',
+            headingClass: 'text-slate-700',
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'], required: false }
+            ]
+          },
+          {
+            key: 'e_point',
+            name: 'Ｅ点（徳田支線放流口）',
+            badge: '放流口',
+            headingClass: 'text-slate-700',
+            fields: [
+              { key: 'power', label: '電力量', unit: 'kWh', step: '0.1', aliases: ['電力'], required: false }
+            ]
+          },
+          {
+            key: 'ginan_pump',
+            name: '岐南ポンプ場',
+            badge: '上水・燃料',
+            headingClass: 'text-slate-700',
+            fields: [
+              { key: 'water_meter_parent', label: '上水メーター（親）', unit: 'm³', step: '0.1', required: false },
+              { key: 'water_meter_child', label: '上水メーター（子）', unit: 'm³', step: '0.1', required: false },
+              { key: 'fuel_transfer', label: '地下燃料 移送カウンター値', unit: 'L', step: '0.1', required: false },
+              { key: 'koideso', label: '小出槽', unit: 'L', step: '0.1', required: false },
+              { key: 'well_water_meter', label: '井水メーター', unit: 'm³', step: '0.1', required: false }
+            ]
+          }
+        ]
+      }
+    ];
+
+    const facilities = facilitySections.flatMap(section =>
+      section.facilities.map(facility => ({ ...facility, sectionTitle: section.title }))
+    );
+    const facilityByKey = Object.fromEntries(facilities.map(facility => [facility.key, facility]));
+    const facilityByName = Object.fromEntries(facilities.map(facility => [facility.name, facility]));
+    const DRAFT_STORAGE_KEY = 'auto_meter_reading_inspection_draft_v2';
     let draftTimer;
 
     function localDateString(date = new Date()) {
@@ -119,9 +360,95 @@
       return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     }
 
+    function getTimeInputId(facilityKey) {
+      return `${facilityKey}_time`;
+    }
+
+    function getTimeActionsId(facilityKey) {
+      return `${facilityKey}_time_actions`;
+    }
+
+    function getFieldInputId(facilityKey, fieldKey) {
+      return `${facilityKey}_${fieldKey}`;
+    }
+
+    function getPrevValueId(facilityKey, fieldKey) {
+      return `prev_${facilityKey}_${fieldKey}`;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderLabel(field) {
+      return field.unit ? `${field.label} (${field.unit})` : field.label;
+    }
+
+    function renderTimeField(facility) {
+      const timeId = getTimeInputId(facility.key);
+      const actionsId = getTimeActionsId(facility.key);
+      return `
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2" for="${timeId}">点検時間</label>
+          <input type="time" id="${timeId}" required>
+          <div id="${actionsId}" class="time-actions">
+            <button type="button" class="now-button" data-time-id="${timeId}" data-facility-name="${escapeHtml(facility.name)}">🕒 現在時間を入力</button>
+          </div>
+          <div id="${getPrevValueId(facility.key, 'time')}" class="prev-value"></div>
+        </div>
+      `;
+    }
+
+    function renderMeasurementField(facility, field) {
+      const inputId = getFieldInputId(facility.key, field.key);
+      return `
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2" for="${inputId}">${renderLabel(field)}</label>
+          <input type="number" id="${inputId}" placeholder="0" step="${field.step || '0.1'}" ${field.required === false ? '' : 'required'}>
+          <div id="${getPrevValueId(facility.key, field.key)}" class="prev-value"></div>
+        </div>
+      `;
+    }
+
+    function renderFacilityCard(facility) {
+      return `
+        <div class="bg-white rounded-lg shadow p-4">
+          <h3 class="text-lg font-bold ${facility.headingClass || 'text-blue-600'} mb-4">${escapeHtml(facility.name)} <span class="text-sm font-medium text-gray-500">${escapeHtml(facility.badge || '')}</span></h3>
+          <div class="space-y-4">
+            ${facility.hasTime ? renderTimeField(facility) : ''}
+            ${facility.fields.map(field => renderMeasurementField(facility, field)).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderFacilitySections() {
+      const container = document.getElementById('facilitySections');
+      container.innerHTML = facilitySections.map(section => `
+        <section class="space-y-4">
+          <div class="px-1">
+            <h2 class="text-lg font-semibold text-gray-700 mb-1">${section.icon} ${escapeHtml(section.title)}</h2>
+            <p class="text-xs text-gray-500">JSON保存・前回値表示・一時保存に対応しています。</p>
+          </div>
+          <div class="space-y-4">
+            ${section.facilities.map(renderFacilityCard).join('')}
+          </div>
+        </section>
+      `).join('');
+    }
+
     function initializeForm() {
       document.getElementById('inspectionDate').value = localDateString();
-      ['timeA', 'timeB', 'timeC'].forEach(id => document.getElementById(id).value = '');
+      facilities.forEach(facility => {
+        if (facility.hasTime) {
+          document.getElementById(getTimeInputId(facility.key)).value = '';
+        }
+      });
     }
 
     function showStatus(message, type = 'info') {
@@ -129,24 +456,55 @@
       status.textContent = message;
       status.className = `status-message status-${type}`;
       status.style.display = 'block';
-      setTimeout(() => status.style.display = 'none', 3000);
+      setTimeout(() => {
+        status.style.display = 'none';
+      }, 3000);
+    }
+
+    function collectMeasurementValue(facility, field, rawValues = false) {
+      const value = document.getElementById(getFieldInputId(facility.key, field.key)).value;
+      if (rawValues) return value;
+      return value === '' ? null : Number(value);
+    }
+
+    function collectFacilityData(facility, rawValues = false) {
+      const data = {
+        '施設キー': facility.key,
+        '施設名': facility.name,
+        '区分': facility.sectionTitle,
+        '測定値': {}
+      };
+
+      if (facility.hasTime) {
+        data['点検時間'] = document.getElementById(getTimeInputId(facility.key)).value;
+      }
+
+      facility.fields.forEach(field => {
+        data['測定値'][field.label] = collectMeasurementValue(facility, field, rawValues);
+      });
+
+      return data;
     }
 
     function getDraftData() {
       return {
         savedAt: new Date().toISOString(),
         '点検日': document.getElementById('inspectionDate').value,
-        'データ一覧': Object.entries(facilities).map(([name, config]) => ({
-          '施設名': name,
-          '点検時間': document.getElementById(config.time).value,
-          '流量': document.getElementById(config.flow).value,
-          '電力': document.getElementById(config.power).value
-        }))
+        'データ一覧': facilities.map(facility => collectFacilityData(facility, true))
       };
     }
 
     function hasDraftInput(data) {
-      return Boolean(data && (data['点検日'] || (Array.isArray(data['データ一覧']) && data['データ一覧'].some(item => item['点検時間'] || item['流量'] || item['電力']))));
+      return Boolean(
+        data && (
+          data['点検日'] ||
+          (Array.isArray(data['データ一覧']) && data['データ一覧'].some(item => {
+            if (item['点検時間']) return true;
+            const measurements = item['測定値'];
+            return measurements && Object.values(measurements).some(value => value !== '' && value !== null && value !== undefined);
+          }))
+        )
+      );
     }
 
     function saveDraft(showMessage = true) {
@@ -171,22 +529,58 @@
       }
     }
 
+    function getFacilityConfig(item) {
+      if (item && typeof item === 'object') {
+        if (item['施設キー'] && facilityByKey[item['施設キー']]) return facilityByKey[item['施設キー']];
+        if (item['施設名'] && facilityByName[item['施設名']]) return facilityByName[item['施設名']];
+      }
+      return null;
+    }
+
+    function getMeasurementValue(item, field) {
+      const candidateKeys = [field.label, ...(field.aliases || [])];
+      if (item && typeof item['測定値'] === 'object' && item['測定値'] !== null) {
+        for (const key of candidateKeys) {
+          if (Object.prototype.hasOwnProperty.call(item['測定値'], key)) {
+            return item['測定値'][key];
+          }
+        }
+      }
+      for (const key of candidateKeys) {
+        if (Object.prototype.hasOwnProperty.call(item, key)) {
+          return item[key];
+        }
+      }
+      return null;
+    }
+
     function restoreDraft(showMessage = true) {
       const draft = readDraft();
       if (!draft || !hasDraftInput(draft)) {
         if (showMessage) showStatus('復元できる一時保存データがありません', 'info');
         return false;
       }
-      if (draft['点検日']) document.getElementById('inspectionDate').value = draft['点検日'];
+
+      if (draft['点検日']) {
+        document.getElementById('inspectionDate').value = draft['点検日'];
+      }
+
       if (Array.isArray(draft['データ一覧'])) {
         draft['データ一覧'].forEach(item => {
-          const config = facilities[item['施設名']];
-          if (!config) return;
-          document.getElementById(config.time).value = item['点検時間'] || '';
-          document.getElementById(config.flow).value = item['流量'] || '';
-          document.getElementById(config.power).value = item['電力'] || '';
+          const facility = getFacilityConfig(item);
+          if (!facility) return;
+
+          if (facility.hasTime) {
+            document.getElementById(getTimeInputId(facility.key)).value = item['点検時間'] || '';
+          }
+
+          facility.fields.forEach(field => {
+            const value = getMeasurementValue(item, field);
+            document.getElementById(getFieldInputId(facility.key, field.key)).value = value ?? '';
+          });
         });
       }
+
       const savedAt = draft.savedAt ? new Date(draft.savedAt).toLocaleString('ja-JP') : '日時不明';
       document.getElementById('draftStatus').textContent = `一時保存済み（${savedAt}）`;
       if (showMessage) showStatus('一時保存データを復元しました', 'success');
@@ -204,29 +598,46 @@
       draftTimer = setTimeout(() => saveDraft(false), 300);
     }
 
-    ['A', 'B', 'C'].forEach(key => {
-      const timeInput = document.getElementById(`time${key}`);
-      const actions = document.getElementById(`actions${key}`);
-      timeInput.addEventListener('focus', () => actions.classList.add('visible'));
-      timeInput.addEventListener('click', () => actions.classList.add('visible'));
-      document.querySelector(`[data-time-id="time${key}"]`).addEventListener('click', () => {
-        timeInput.value = currentTimeString();
-        actions.classList.add('visible');
-        saveDraft(false);
-        showStatus(`処理場${key}の点検時間に現在時刻を入力しました`, 'success');
+    function setPreviousValue(elementId, value, unit = '') {
+      const element = document.getElementById(elementId);
+      if (value === null || value === undefined || value === '') {
+        element.textContent = '前回値: 未記録';
+      } else {
+        element.textContent = `前回値: ${value}${unit ? ` ${unit}` : ''}`;
+      }
+      element.style.display = 'block';
+    }
+
+    function clearPreviousValues() {
+      document.querySelectorAll('.prev-value').forEach(element => {
+        element.textContent = '';
+        element.style.display = 'none';
       });
-    });
+    }
 
-    document.querySelectorAll('#inspectionForm input').forEach(input => {
-      input.addEventListener('input', scheduleDraftSave);
-      input.addEventListener('change', scheduleDraftSave);
-    });
+    function attachTimeInputHandlers() {
+      facilities.filter(facility => facility.hasTime).forEach(facility => {
+        const timeInput = document.getElementById(getTimeInputId(facility.key));
+        const actions = document.getElementById(getTimeActionsId(facility.key));
+        const button = document.querySelector(`[data-time-id="${getTimeInputId(facility.key)}"]`);
 
-    document.getElementById('saveDraftButton').addEventListener('click', () => saveDraft(true));
-    document.getElementById('restoreDraftButton').addEventListener('click', () => restoreDraft(true));
-    document.getElementById('clearDraftButton').addEventListener('click', () => {
-      if (confirm('一時保存データを削除しますか？')) clearDraft(true);
-    });
+        timeInput.addEventListener('focus', () => actions.classList.add('visible'));
+        timeInput.addEventListener('click', () => actions.classList.add('visible'));
+        button.addEventListener('click', () => {
+          timeInput.value = currentTimeString();
+          actions.classList.add('visible');
+          saveDraft(false);
+          showStatus(`${facility.name}の点検時間に現在時刻を入力しました`, 'success');
+        });
+      });
+    }
+
+    function attachInputHandlers() {
+      document.querySelectorAll('#inspectionForm input').forEach(input => {
+        input.addEventListener('input', scheduleDraftSave);
+        input.addEventListener('change', scheduleDraftSave);
+      });
+    }
 
     function handleFile(file) {
       if (!file) return;
@@ -243,38 +654,36 @@
       reader.readAsText(file);
     }
 
-    document.getElementById('fileInput').addEventListener('change', event => handleFile(event.target.files[0]));
-    const fileLabel = document.querySelector('.file-input-label');
-    fileLabel.addEventListener('dragover', event => { event.preventDefault(); fileLabel.style.backgroundColor = '#cffafe'; });
-    fileLabel.addEventListener('dragleave', () => fileLabel.style.backgroundColor = '#f0f9ff');
-    fileLabel.addEventListener('drop', event => { event.preventDefault(); fileLabel.style.backgroundColor = '#f0f9ff'; handleFile(event.dataTransfer.files[0]); });
-
     function loadPreviousValues(jsonData) {
-      if (!Array.isArray(jsonData.データ一覧)) throw new Error('データ一覧がありません');
-      jsonData.データ一覧.forEach(item => {
-        const config = facilities[item.施設名];
-        if (!config) return;
-        [[`prevTime${config.key}`, `前回値: ${item.点検時間 || '未記録'}`], [`prevFlow${config.key}`, `前回値: ${item.流量} m³/h`], [`prevPower${config.key}`, `前回値: ${item.電力} kWh`]].forEach(([id, text]) => {
-          const element = document.getElementById(id);
-          element.textContent = text;
-          element.style.display = 'block';
+      if (!Array.isArray(jsonData['データ一覧'])) {
+        throw new Error('データ一覧がありません');
+      }
+
+      clearPreviousValues();
+
+      jsonData['データ一覧'].forEach(item => {
+        const facility = getFacilityConfig(item);
+        if (!facility) return;
+
+        if (facility.hasTime) {
+          setPreviousValue(getPrevValueId(facility.key, 'time'), item['点検時間'] || '');
+        }
+
+        facility.fields.forEach(field => {
+          const value = getMeasurementValue(item, field);
+          setPreviousValue(getPrevValueId(facility.key, field.key), value, field.unit || '');
         });
       });
     }
 
-    document.getElementById('inspectionForm').addEventListener('submit', event => {
-      event.preventDefault();
-      const date = document.getElementById('inspectionDate').value;
-      const data = {
-        '点検日': date,
-        'データ一覧': Object.entries(facilities).map(([name, config]) => ({
-          '施設名': name,
-          '点検時間': document.getElementById(config.time).value,
-          '流量': parseFloat(document.getElementById(config.flow).value),
-          '電力': parseFloat(document.getElementById(config.power).value)
-        }))
+    function buildExportData() {
+      return {
+        '点検日': document.getElementById('inspectionDate').value,
+        'データ一覧': facilities.map(facility => collectFacilityData(facility, false))
       };
-      const filename = `inspection_summary_${date.replace(/-/g, '')}.json`;
+    }
+
+    function downloadJson(data, filename) {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -284,13 +693,47 @@
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+    }
+
+    renderFacilitySections();
+    attachTimeInputHandlers();
+    attachInputHandlers();
+
+    document.getElementById('saveDraftButton').addEventListener('click', () => saveDraft(true));
+    document.getElementById('restoreDraftButton').addEventListener('click', () => restoreDraft(true));
+    document.getElementById('clearDraftButton').addEventListener('click', () => {
+      if (confirm('一時保存データを削除しますか？')) clearDraft(true);
+    });
+
+    document.getElementById('fileInput').addEventListener('change', event => handleFile(event.target.files[0]));
+    const fileLabel = document.querySelector('.file-input-label');
+    fileLabel.addEventListener('dragover', event => {
+      event.preventDefault();
+      fileLabel.style.backgroundColor = '#cffafe';
+    });
+    fileLabel.addEventListener('dragleave', () => {
+      fileLabel.style.backgroundColor = '#f0f9ff';
+    });
+    fileLabel.addEventListener('drop', event => {
+      event.preventDefault();
+      fileLabel.style.backgroundColor = '#f0f9ff';
+      handleFile(event.dataTransfer.files[0]);
+    });
+
+    document.getElementById('inspectionForm').addEventListener('submit', event => {
+      event.preventDefault();
+      if (!event.currentTarget.reportValidity()) return;
+
+      const data = buildExportData();
+      const filename = `inspection_summary_${data['点検日'].replace(/-/g, '')}.json`;
+      downloadJson(data, filename);
       clearDraft(false);
       showStatus(`✅ ${filename} をダウンロードしました。一時保存を削除しました`, 'success');
     });
 
     document.getElementById('inspectionForm').addEventListener('reset', () => {
       setTimeout(() => {
-        document.querySelectorAll('.prev-value').forEach(element => { element.textContent = ''; element.style.display = 'none'; });
+        clearPreviousValues();
         document.querySelectorAll('.time-actions').forEach(element => element.classList.remove('visible'));
         clearDraft(false);
         initializeForm();
