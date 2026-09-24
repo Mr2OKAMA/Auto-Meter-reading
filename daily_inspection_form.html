@@ -16,13 +16,19 @@
     .now-button:active { background: #dbeafe; transform: scale(.98); }
     .btn { padding: .875rem 1.5rem; border-radius: .5rem; font-weight: 600; cursor: pointer; border: none; font-size: 1rem; }
     .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover { background: #2563eb; }
     .btn-secondary { background: #f3f4f6; color: #374151; border: 2px solid #d1d5db; }
+    .btn-secondary:hover { background: #e5e7eb; }
+    .btn-draft { background: #0f766e; color: white; }
+    .btn-draft:hover { background: #115e59; }
+    .btn-danger { background: #fff; color: #b91c1c; border: 1px solid #fecaca; }
     .file-input-label { display: block; padding: .875rem 1.5rem; background: #f0f9ff; border: 2px dashed #0ea5e9; border-radius: .5rem; text-align: center; cursor: pointer; color: #0369a1; font-weight: 500; }
     #fileInput { display: none; }
     .status-message { padding: .75rem; border-radius: .5rem; margin-bottom: 1rem; font-size: .875rem; }
     .status-success { background: #dcfce7; color: #166534; border-left: 4px solid #22c55e; }
     .status-info { background: #e0f2fe; color: #0c4a6e; border-left: 4px solid #0ea5e9; }
     .status-error { background: #fee2e2; color: #991b1b; border-left: 4px solid #ef4444; }
+    .draft-status { color: #047857; font-size: .75rem; min-height: 1.25rem; }
   </style>
 </head>
 <body class="bg-gray-50">
@@ -39,6 +45,17 @@
       <label for="fileInput" class="file-input-label">📄 JSONファイルを選択またはドラッグ&ドロップ</label>
       <input type="file" id="fileInput" accept=".json,application/json">
       <p class="text-xs text-gray-500 mt-2">inspection_summary_*.json ファイルを選択してください</p>
+    </div>
+
+    <div class="bg-teal-50 border border-teal-200 rounded-lg p-4 mb-6">
+      <h2 class="text-lg font-semibold text-teal-800 mb-2">一時保存</h2>
+      <p class="text-sm text-teal-700 mb-3">入力中の内容はこのブラウザに自動保存されます。ブラウザを閉じても、次回アクセス時に復元できます。</p>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <button type="button" id="saveDraftButton" class="btn btn-draft">💾 一時保存</button>
+        <button type="button" id="restoreDraftButton" class="btn btn-secondary">↩️ 復元</button>
+        <button type="button" id="clearDraftButton" class="btn btn-danger">🗑️ 一時保存を削除</button>
+      </div>
+      <p id="draftStatus" class="draft-status mt-2"></p>
     </div>
 
     <form id="inspectionForm" class="space-y-4">
@@ -78,7 +95,7 @@
       </div>
 
       <div class="flex gap-3 mt-8 mb-4">
-        <button type="submit" class="btn btn-primary flex-1">💾 JSONファイルとして保存</button>
+        <button type="submit" class="btn btn-primary flex-1">📥 JSONファイルとして保存</button>
         <button type="reset" class="btn btn-secondary flex-1">🔄 リセット</button>
       </div>
     </form>
@@ -90,6 +107,8 @@
       '処理場B': { key: 'B', time: 'timeB', flow: 'flowB', power: 'powerB' },
       '処理場C': { key: 'C', time: 'timeC', flow: 'flowC', power: 'powerC' }
     };
+    const DRAFT_STORAGE_KEY = 'auto_meter_reading_inspection_draft_v1';
+    let draftTimer;
 
     function localDateString(date = new Date()) {
       return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -102,7 +121,6 @@
 
     function initializeForm() {
       document.getElementById('inspectionDate').value = localDateString();
-      // 点検時間は自動入力せず、空欄にして手動入力または「現在時間を入力」を使用する
       ['timeA', 'timeB', 'timeC'].forEach(id => document.getElementById(id).value = '');
     }
 
@@ -114,7 +132,78 @@
       setTimeout(() => status.style.display = 'none', 3000);
     }
 
-    // 点検時間をタップ／フォーカスすると「現在時間を入力」ボタンを表示
+    function getDraftData() {
+      return {
+        savedAt: new Date().toISOString(),
+        '点検日': document.getElementById('inspectionDate').value,
+        'データ一覧': Object.entries(facilities).map(([name, config]) => ({
+          '施設名': name,
+          '点検時間': document.getElementById(config.time).value,
+          '流量': document.getElementById(config.flow).value,
+          '電力': document.getElementById(config.power).value
+        }))
+      };
+    }
+
+    function hasDraftInput(data) {
+      return Boolean(data && (data['点検日'] || (Array.isArray(data['データ一覧']) && data['データ一覧'].some(item => item['点検時間'] || item['流量'] || item['電力']))));
+    }
+
+    function saveDraft(showMessage = true) {
+      try {
+        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(getDraftData()));
+        const savedAt = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+        document.getElementById('draftStatus').textContent = `一時保存済み（${savedAt}）`;
+        if (showMessage) showStatus('入力内容を一時保存しました', 'success');
+      } catch (error) {
+        console.error(error);
+        if (showMessage) showStatus('一時保存に失敗しました。ブラウザの保存領域を確認してください', 'error');
+      }
+    }
+
+    function readDraft() {
+      try {
+        const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (error) {
+        console.error(error);
+        return null;
+      }
+    }
+
+    function restoreDraft(showMessage = true) {
+      const draft = readDraft();
+      if (!draft || !hasDraftInput(draft)) {
+        if (showMessage) showStatus('復元できる一時保存データがありません', 'info');
+        return false;
+      }
+      if (draft['点検日']) document.getElementById('inspectionDate').value = draft['点検日'];
+      if (Array.isArray(draft['データ一覧'])) {
+        draft['データ一覧'].forEach(item => {
+          const config = facilities[item['施設名']];
+          if (!config) return;
+          document.getElementById(config.time).value = item['点検時間'] || '';
+          document.getElementById(config.flow).value = item['流量'] || '';
+          document.getElementById(config.power).value = item['電力'] || '';
+        });
+      }
+      const savedAt = draft.savedAt ? new Date(draft.savedAt).toLocaleString('ja-JP') : '日時不明';
+      document.getElementById('draftStatus').textContent = `一時保存済み（${savedAt}）`;
+      if (showMessage) showStatus('一時保存データを復元しました', 'success');
+      return true;
+    }
+
+    function clearDraft(showMessage = true) {
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+      document.getElementById('draftStatus').textContent = '';
+      if (showMessage) showStatus('一時保存データを削除しました', 'success');
+    }
+
+    function scheduleDraftSave() {
+      clearTimeout(draftTimer);
+      draftTimer = setTimeout(() => saveDraft(false), 300);
+    }
+
     ['A', 'B', 'C'].forEach(key => {
       const timeInput = document.getElementById(`time${key}`);
       const actions = document.getElementById(`actions${key}`);
@@ -123,8 +212,20 @@
       document.querySelector(`[data-time-id="time${key}"]`).addEventListener('click', () => {
         timeInput.value = currentTimeString();
         actions.classList.add('visible');
+        saveDraft(false);
         showStatus(`処理場${key}の点検時間に現在時刻を入力しました`, 'success');
       });
+    });
+
+    document.querySelectorAll('#inspectionForm input').forEach(input => {
+      input.addEventListener('input', scheduleDraftSave);
+      input.addEventListener('change', scheduleDraftSave);
+    });
+
+    document.getElementById('saveDraftButton').addEventListener('click', () => saveDraft(true));
+    document.getElementById('restoreDraftButton').addEventListener('click', () => restoreDraft(true));
+    document.getElementById('clearDraftButton').addEventListener('click', () => {
+      if (confirm('一時保存データを削除しますか？')) clearDraft(true);
     });
 
     function handleFile(file) {
@@ -183,18 +284,30 @@
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      showStatus(`✅ ${filename} をダウンロードしました`, 'success');
+      clearDraft(false);
+      showStatus(`✅ ${filename} をダウンロードしました。一時保存を削除しました`, 'success');
     });
 
     document.getElementById('inspectionForm').addEventListener('reset', () => {
       setTimeout(() => {
         document.querySelectorAll('.prev-value').forEach(element => { element.textContent = ''; element.style.display = 'none'; });
         document.querySelectorAll('.time-actions').forEach(element => element.classList.remove('visible'));
+        clearDraft(false);
         initializeForm();
       }, 0);
     });
 
+    window.addEventListener('beforeunload', () => saveDraft(false));
+
     initializeForm();
+    const existingDraft = readDraft();
+    if (existingDraft && hasDraftInput(existingDraft)) {
+      const savedAt = existingDraft.savedAt ? new Date(existingDraft.savedAt).toLocaleString('ja-JP') : '日時不明';
+      document.getElementById('draftStatus').textContent = `一時保存あり（${savedAt}）`;
+      setTimeout(() => {
+        if (confirm(`一時保存データ（${savedAt}）を復元しますか？`)) restoreDraft(true);
+      }, 100);
+    }
   </script>
 </body>
 </html>
