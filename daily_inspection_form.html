@@ -29,6 +29,9 @@
     .status-info { background: #e0f2fe; color: #0c4a6e; border-left: 4px solid #0ea5e9; }
     .status-error { background: #fee2e2; color: #991b1b; border-left: 4px solid #ef4444; }
     .draft-status { color: #047857; font-size: .75rem; min-height: 1.25rem; }
+    .obsolete-field { background: #f3f4f6; border: 1px solid #d1d5db; border-radius: .5rem; padding: .75rem; opacity: .85; }
+    .obsolete-field input[type="number"] { background: #e5e7eb; color: #6b7280; border-color: #d1d5db; cursor: not-allowed; }
+    .obsolete-note { margin-top: .35rem; color: #6b7280; font-size: .75rem; }
   </style>
 </head>
 <body class="bg-gray-50">
@@ -304,7 +307,7 @@
             fields: [
               { key: 'water_meter', label: '上水メーター', unit: 'm³', step: '0.1', required: false },
               { key: 'fuel_transfer_total', label: '地下燃料 移送カウンター値合計', unit: 'L', step: '0.1', required: false },
-              { key: 'koideso', label: '小出槽', unit: 'L', step: '0.1', required: false },
+              { key: 'koideso', label: '小出槽', unit: 'L', step: '0.1', required: false, obsolete: true },
               { key: 'well_water_meter', label: '井水メーター', unit: 'm³', step: '0.1', required: false }
             ]
           },
@@ -333,9 +336,9 @@
             headingClass: 'text-slate-700',
             fields: [
               { key: 'water_meter_parent', label: '上水メーター（親）', unit: 'm³', step: '0.1', required: false },
-              { key: 'water_meter_child', label: '上水メーター（子）', unit: 'm³', step: '0.1', required: false },
+              { key: 'water_meter_child', label: '上水メーター（子）', unit: 'm³', step: '0.1', required: false, obsolete: true },
               { key: 'fuel_transfer', label: '地下燃料 移送カウンター値', unit: 'L', step: '0.1', required: false },
-              { key: 'koideso', label: '小出槽', unit: 'L', step: '0.1', required: false },
+              { key: 'koideso', label: '小出槽', unit: 'L', step: '0.1', required: false, obsolete: true },
               { key: 'well_water_meter', label: '井水メーター', unit: 'm³', step: '0.1', required: false }
             ]
           }
@@ -437,10 +440,14 @@
 
     function renderMeasurementField(facility, field) {
       const inputId = getFieldInputId(facility.key, field.key);
+      const isObsolete = field.obsolete === true;
+      const obsoleteNoteId = `${inputId}_obsolete_note`;
+      const requiredAttr = !isObsolete && field.required !== false ? 'required' : '';
       return `
-        <div>
+        <div class="${isObsolete ? 'obsolete-field' : ''}">
           <label class="block text-sm font-medium text-gray-700 mb-2" for="${inputId}">${renderLabel(field)}</label>
-          <input type="number" id="${inputId}" placeholder="0" step="${field.step || '0.1'}" ${field.required === false ? '' : 'required'}>
+          <input type="number" id="${inputId}" placeholder="0" step="${field.step || '0.1'}" ${requiredAttr} ${isObsolete ? `disabled data-obsolete="true" aria-describedby="${obsoleteNoteId}"` : ''}>
+          ${isObsolete ? `<p id="${obsoleteNoteId}" class="obsolete-note">廃止項目のため入力できません</p>` : ''}
           <div id="${getPrevValueId(facility.key, field.key)}" class="prev-value"></div>
         </div>
       `;
@@ -514,6 +521,7 @@
     }
 
     function collectMeasurementValue(facility, field, rawValues = false) {
+      if (field.obsolete) return rawValues ? '' : null;
       const value = document.getElementById(getFieldInputId(facility.key, field.key)).value;
       if (rawValues) return value;
       return value === '' ? null : Number(value);
@@ -639,8 +647,13 @@
           }
 
           facility.fields.forEach(field => {
+            const input = document.getElementById(getFieldInputId(facility.key, field.key));
+            if (field.obsolete) {
+              input.value = '';
+              return;
+            }
             const value = getMeasurementValue(item, field);
-            document.getElementById(getFieldInputId(facility.key, field.key)).value = value ?? '';
+            input.value = value ?? '';
           });
         });
       }
