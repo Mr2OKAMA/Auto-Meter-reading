@@ -125,6 +125,8 @@ Public Sub Json点検データ取込_セルフテスト()
     Set facilityMap = BuildFacilityMap()
     Dim facilityEntry As Object
     Set facilityEntry = CreateObject("Scripting.Dictionary")
+    facilityEntry("施設名") = "Ｄ点（中屋川排水放流口）"
+    AssertEquals "d_point", ResolveFacilityKey(facilityEntry, facilityMap), "施設名全角フォールバック"
     facilityEntry("施設名") = "D点（中屋川排水放流口）"
     AssertEquals "d_point", ResolveFacilityKey(facilityEntry, facilityMap), "施設名別名フォールバック"
 
@@ -550,6 +552,7 @@ End Function
 Private Function NormalizeLabel(ByVal value As String) As String
     Dim s As String
     s = Trim$(value)
+    s = ToNarrowAscii(s)
 
     s = Replace(s, " ", "")
     s = Replace(s, "　", "")
@@ -558,6 +561,27 @@ Private Function NormalizeLabel(ByVal value As String) As String
     s = Replace(s, "）", ")")
 
     NormalizeLabel = LCase$(s)
+End Function
+
+Private Function ToNarrowAscii(ByVal value As String) As String
+    Dim i As Long
+    Dim ch As String
+    Dim codePoint As Long
+    Dim outText As String
+
+    For i = 1 To Len(value)
+        ch = Mid$(value, i, 1)
+        codePoint = AscW(ch)
+
+        Select Case codePoint
+            Case &HFF10 To &HFF19, &HFF21 To &HFF3A, &HFF41 To &HFF5A
+                outText = outText & ChrW$(codePoint - &HFEE0)
+            Case Else
+                outText = outText & ch
+        End Select
+    Next i
+
+    ToNarrowAscii = outText
 End Function
 
 Private Function ColumnLetter(ByVal ws As Worksheet, ByVal columnNumber As Long) As String
@@ -622,12 +646,33 @@ Private Function NormalizeTimeValue(ByVal rawTime As String) As Variant
         Exit Function
     End If
 
-    If IsDate(s) Then
-        NormalizeTimeValue = Format$(CDate(s), "hh:nn")
+    Dim normalized As String
+    normalized = NormalizeTimeOnlyString(s)
+    If Len(normalized) > 0 Then
+        NormalizeTimeValue = normalized
         Exit Function
     End If
 
     NormalizeTimeValue = Null
+End Function
+
+Private Function NormalizeTimeOnlyString(ByVal rawTime As String) As String
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Pattern = "^(?:[01]?\d|2[0-3]):[0-5]\d(?:[:][0-5]\d)?$"
+    re.Global = False
+
+    If Not re.Test(rawTime) Then Exit Function
+
+    Dim parts() As String
+    parts = Split(rawTime, ":")
+
+    Dim hh As Long
+    Dim mm As Long
+    hh = CLng(parts(0))
+    mm = CLng(parts(1))
+
+    NormalizeTimeOnlyString = Format$(TimeSerial(hh, mm, 0), "hh:nn")
 End Function
 
 ' ===== JSON parser (external reference不要) =====
@@ -911,7 +956,7 @@ Private Function ParseJsonNumber(ByRef st As JsonState) As Variant
         digitToken = Replace(digitToken, "+", "")
         digitToken = Replace(digitToken, "-", "")
 
-        If Len(digitToken) > 15 Then
+        If Not IsIntegerExactlyRepresentable(digitToken) Then
             ParseJsonNumber = token
         Else
             ParseJsonNumber = CDbl(token)
@@ -919,6 +964,23 @@ Private Function ParseJsonNumber(ByRef st As JsonState) As Variant
     Else
         ParseJsonNumber = CDbl(token)
     End If
+End Function
+
+Private Function IsIntegerExactlyRepresentable(ByVal unsignedDigits As String) As Boolean
+    Dim normalized As String
+    normalized = unsignedDigits
+
+    Do While Len(normalized) > 1 And Left$(normalized, 1) = "0"
+        normalized = Mid$(normalized, 2)
+    Loop
+
+    If Len(normalized) < 16 Then
+        IsIntegerExactlyRepresentable = True
+        Exit Function
+    End If
+
+    If Len(normalized) > 16 Then Exit Function
+    IsIntegerExactlyRepresentable = (StrComp(normalized, "9007199254740991", vbBinaryCompare) <= 0)
 End Function
 
 Private Function IsValidJsonNumberToken(ByVal token As String) As Boolean
