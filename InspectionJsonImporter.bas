@@ -682,10 +682,8 @@ End Function
 Private Function NormalizeCellValue(ByVal rawValue As Variant) As Variant
     If VarType(rawValue) = vbString Then
         NormalizeCellValue = CStr(rawValue)
-    ElseIf IsNumeric(rawValue) Then
-        NormalizeCellValue = CDbl(rawValue)
     Else
-        NormalizeCellValue = CStr(rawValue)
+        NormalizeCellValue = rawValue
     End If
 End Function
 
