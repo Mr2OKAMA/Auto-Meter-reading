@@ -121,6 +121,13 @@ Public Sub Json点検データ取込_セルフテスト()
     AssertEquals "電力量", CanonicalItemName("電力", aliases), "項目別名"
     AssertEquals "流量（深田）", CanonicalItemName("流量(深田)", aliases), "括弧揺れ"
 
+    Dim facilityMap As Object
+    Set facilityMap = BuildFacilityMap()
+    Dim facilityEntry As Object
+    Set facilityEntry = CreateObject("Scripting.Dictionary")
+    facilityEntry("施設名") = "D点（中屋川排水放流口）"
+    AssertEquals "d_point", ResolveFacilityKey(facilityEntry, facilityMap), "施設名別名フォールバック"
+
     Dim okRoot As Object
     Set okRoot = ParseJsonObject("{""点検日"":""2026-09-25"",""データ一覧"":[]}")
     AssertTrue okRoot.Exists("点検日"), "正常JSON解析"
@@ -460,10 +467,16 @@ Private Function ResolveFacilityKey(ByVal entry As Object, ByVal facilities As O
 
         Dim facilityKey As Variant
         For Each facilityKey In facilities.Keys
-            If NormalizeLabel(CStr(facilities(facilityKey)("name"))) = normalizedName Then
-                ResolveFacilityKey = CStr(facilityKey)
-                Exit Function
-            End If
+            Dim aliases As Collection
+            Set aliases = facilities(facilityKey)("aliases")
+
+            Dim aliasValue As Variant
+            For Each aliasValue In aliases
+                If CStr(aliasValue) = normalizedName Then
+                    ResolveFacilityKey = CStr(facilityKey)
+                    Exit Function
+                End If
+            Next aliasValue
         Next facilityKey
     End If
 End Function
@@ -479,7 +492,8 @@ Private Function FindDateColumn(ByVal ws As Worksheet, ByVal headerRow As Long, 
 
     For c = startCol To lastCol
         Dim key As String
-        key = NormalizeDateKey(ws.Cells(headerRow, c).Value)
+        key = NormalizeDateKey(ws.Cells(headerRow, c).Text)
+        If Len(key) = 0 Then key = NormalizeDateKey(ws.Cells(headerRow, c).Value)
         If key = targetDateKey Then
             FindDateColumn = c
             Exit Function
@@ -488,7 +502,8 @@ Private Function FindDateColumn(ByVal ws As Worksheet, ByVal headerRow As Long, 
 
     If startCol > 1 Then
         For c = 1 To startCol - 1
-            key = NormalizeDateKey(ws.Cells(headerRow, c).Value)
+            key = NormalizeDateKey(ws.Cells(headerRow, c).Text)
+            If Len(key) = 0 Then key = NormalizeDateKey(ws.Cells(headerRow, c).Value)
             If key = targetDateKey Then
                 FindDateColumn = c
                 Exit Function
@@ -725,7 +740,15 @@ Private Function ParseJsonArray(ByRef st As JsonState) As Collection
     End If
 
     Do
-        arr.Add ParseJsonValue(st)
+        Dim parsedItem As Variant
+        parsedItem = ParseJsonValue(st)
+        If IsObject(parsedItem) Then
+            Dim parsedObj As Object
+            Set parsedObj = parsedItem
+            arr.Add parsedObj
+        Else
+            arr.Add parsedItem
+        End If
         SkipJsonWhitespace st
 
         Dim nextCh As String
@@ -782,6 +805,9 @@ Private Function ParseJsonString(ByRef st As JsonState) As String
                     Err.Raise vbObjectError + 2102, , "JSON文字列のエスケープが不正です: \\" & esc
             End Select
         Else
+            If AscW(ch) >= 0 And AscW(ch) <= 31 Then
+                Err.Raise vbObjectError + 2115, , "JSON文字列に未エスケープ制御文字が含まれています。"
+            End If
             result = result & ch
         End If
     Loop
@@ -896,10 +922,12 @@ Private Function ParseJsonNumber(ByRef st As JsonState) As Variant
 End Function
 
 Private Function IsValidJsonNumberToken(ByVal token As String) As Boolean
-    Dim re As Object
-    Set re = CreateObject("VBScript.RegExp")
-    re.Pattern = "^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$"
-    re.Global = False
+    Static re As Object
+    If re Is Nothing Then
+        Set re = CreateObject("VBScript.RegExp")
+        re.Pattern = "^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$"
+        re.Global = False
+    End If
     IsValidJsonNumberToken = re.Test(token)
 End Function
 
