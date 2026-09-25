@@ -448,7 +448,11 @@
     function renderFacilityCard(facility) {
       return `
         <div class="bg-white rounded-lg shadow p-4">
-          <h3 class="text-lg font-bold ${facility.headingClass || 'text-blue-600'} mb-4">${escapeHtml(facility.name)} <span class="text-sm font-medium text-gray-500">${escapeHtml(facility.badge || '')}</span></h3>
+          <h3 class="text-lg font-bold ${facility.headingClass || 'text-blue-600'} mb-4">
+            ${escapeHtml(facility.name)}
+            <span class="text-sm font-medium text-gray-500">${escapeHtml(facility.sectionTitle || '')}</span>
+            <span class="text-sm font-medium text-gray-500">${escapeHtml(facility.badge || '')}</span>
+          </h3>
           <div class="space-y-4">
             ${facility.hasTime ? renderTimeField(facility) : ''}
             ${facility.fields.map(field => renderMeasurementField(facility, field)).join('')}
