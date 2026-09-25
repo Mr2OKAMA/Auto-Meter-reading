@@ -71,9 +71,10 @@ Public Sub Json点検データ取込_記録シート()
     Dim skippedUnknownFacility As Long
     Dim skippedUnknownItem As Long
     Dim skippedAmbiguousTime As Long
+    Dim skippedInvalidTime As Long
 
     BuildWritePlans root("データ一覧"), facilities, itemAliasMap, measurementRows, timeRows, targetColumn, _
-                    writePlans, skippedEmptyCount, skippedUnknownFacility, skippedUnknownItem, skippedAmbiguousTime
+                    writePlans, skippedEmptyCount, skippedUnknownFacility, skippedUnknownItem, skippedAmbiguousTime, skippedInvalidTime
 
     If writePlans.Count = 0 Then
         MsgBox "書き込み対象がありませんでした。" & vbCrLf & _
@@ -86,7 +87,8 @@ Public Sub Json点検データ取込_記録シート()
               "空値スキップ: " & skippedEmptyCount & "件" & vbCrLf & _
               "施設未一致: " & skippedUnknownFacility & "件" & vbCrLf & _
               "項目未一致: " & skippedUnknownItem & "件" & vbCrLf & _
-              "点検時間スキップ（欄未特定）: " & skippedAmbiguousTime & "件" & vbCrLf & vbCrLf & _
+              "点検時間スキップ（欄未特定）: " & skippedAmbiguousTime & "件" & vbCrLf & _
+              "点検時間スキップ（時刻形式不正）: " & skippedInvalidTime & "件" & vbCrLf & vbCrLf & _
               "続行しますか？"
 
     If MsgBox(message, vbQuestion + vbYesNo, "JSON取込確認") <> vbYes Then Exit Sub
@@ -98,7 +100,8 @@ Public Sub Json点検データ取込_記録シート()
            "空値スキップ: " & skippedEmptyCount & "件" & vbCrLf & _
            "施設未一致: " & skippedUnknownFacility & "件" & vbCrLf & _
            "項目未一致: " & skippedUnknownItem & "件" & vbCrLf & _
-           "点検時間スキップ（欄未特定）: " & skippedAmbiguousTime & "件", vbInformation
+           "点検時間スキップ（欄未特定）: " & skippedAmbiguousTime & "件" & vbCrLf & _
+           "点検時間スキップ（時刻形式不正）: " & skippedInvalidTime & "件", vbInformation
     Exit Sub
 
 ErrorHandler:
@@ -123,8 +126,10 @@ Public Sub Json点検データ取込_セルフテスト()
     AssertTrue okRoot.Exists("点検日"), "正常JSON解析"
 
     AssertParseFail "{""点検日"":""2026-09-25""}garbage", "末尾ゴミ検知"
+    AssertParseFail "{""n"":+1}", "不正数値(先頭プラス)検知"
     AssertParseFail "{""n"":01}", "不正数値(先頭ゼロ)検知"
     AssertParseFail "{""n"":1e}", "不正数値(指数欠落)検知"
+    AssertParseFail "{""t"":""\uDC00""}", "単独下位サロゲート検知"
 
     MsgBox "セルフテストが完了しました。", vbInformation
     Exit Sub
@@ -135,7 +140,7 @@ End Sub
 Private Sub BuildWritePlans(ByVal dataList As Variant, ByVal facilities As Object, ByVal itemAliasMap As Object, _
                             ByVal measurementRows As Object, ByVal timeRows As Object, ByVal targetColumn As Long, _
                             ByRef writePlans As Collection, ByRef skippedEmptyCount As Long, ByRef skippedUnknownFacility As Long, _
-                            ByRef skippedUnknownItem As Long, ByRef skippedAmbiguousTime As Long)
+                            ByRef skippedUnknownItem As Long, ByRef skippedAmbiguousTime As Long, ByRef skippedInvalidTime As Long)
     If Not IsObject(dataList) Then Exit Sub
 
     Dim entry As Variant
@@ -187,7 +192,13 @@ Private Sub BuildWritePlans(ByVal dataList As Variant, ByVal facilities As Objec
                 timeKey = facilityKey & "|" & NormalizeLabel("点検時間")
 
                 If timeRows.Exists(timeKey) Then
-                    AddWritePlan writePlans, CLng(timeRows(timeKey)), targetColumn, NormalizeTimeValue(CStr(timeValue))
+                    Dim normalizedTime As Variant
+                    normalizedTime = NormalizeTimeValue(CStr(timeValue))
+                    If IsNull(normalizedTime) Then
+                        skippedInvalidTime = skippedInvalidTime + 1
+                    Else
+                        AddWritePlan writePlans, CLng(timeRows(timeKey)), targetColumn, normalizedTime
+                    End If
                 Else
                     ' 点検時間欄の場所がシート上で判別できない場合は書き込まない（測定値の反映を優先）。
                     skippedAmbiguousTime = skippedAmbiguousTime + 1
@@ -587,12 +598,12 @@ Private Function NormalizeCellValue(ByVal rawValue As Variant) As Variant
     End If
 End Function
 
-Private Function NormalizeTimeValue(ByVal rawTime As String) As String
+Private Function NormalizeTimeValue(ByVal rawTime As String) As Variant
     Dim s As String
     s = Trim$(rawTime)
 
     If Len(s) = 0 Then
-        NormalizeTimeValue = s
+        NormalizeTimeValue = Null
         Exit Function
     End If
 
@@ -601,7 +612,7 @@ Private Function NormalizeTimeValue(ByVal rawTime As String) As String
         Exit Function
     End If
 
-    NormalizeTimeValue = s
+    NormalizeTimeValue = Null
 End Function
 
 ' ===== JSON parser (external reference不要) =====
@@ -808,6 +819,8 @@ Private Function ParseJsonUnicodeEscape(ByRef st As JsonState) As String
         Else
             Err.Raise vbObjectError + 2111, , "Unicodeサロゲートペアが途中で終わっています。"
         End If
+    ElseIf highCode >= &HDC00 And highCode <= &HDFFF Then
+        Err.Raise vbObjectError + 2114, , "Unicode下位サロゲートが単独で出現しました。"
     End If
 
     ParseJsonUnicodeEscape = ChrW$(highCode)
@@ -833,9 +846,28 @@ Private Function ParseJsonNumber(ByRef st As JsonState) As Variant
     Do While st.Position <= st.Length
         Dim ch As String
         ch = Mid$(st.Source, st.Position, 1)
-
-        If InStr(1, "0123456789+-.eE", ch, vbBinaryCompare) = 0 Then Exit Do
-        st.Position = st.Position + 1
+        Select Case ch
+            Case "0" To "9", ".", "e", "E"
+                st.Position = st.Position + 1
+            Case "-", "+"
+                If st.Position = startPos Then
+                    If ch = "-" Then
+                        st.Position = st.Position + 1
+                    Else
+                        Exit Do
+                    End If
+                Else
+                    Dim prev As String
+                    prev = Mid$(st.Source, st.Position - 1, 1)
+                    If prev = "e" Or prev = "E" Then
+                        st.Position = st.Position + 1
+                    Else
+                        Exit Do
+                    End If
+                End If
+            Case Else
+                Exit Do
+        End Select
     Loop
 
     Dim token As String
