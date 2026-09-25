@@ -1,0 +1,818 @@
+Attribute VB_Name = "InspectionJsonImporter"
+Option Explicit
+
+Private Const TARGET_SHEET_NAME As String = "記録"
+Private Const DATE_HEADER_ROW As Long = 4
+Private Const LABEL_SCAN_COLUMNS As Long = 12
+Private Const msoFileDialogFilePicker As Long = 3
+
+Public Sub Json点検データ取込_記録シート()
+    On Error GoTo ErrorHandler
+
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets(TARGET_SHEET_NAME)
+
+    Dim jsonPath As String
+    jsonPath = PickJsonFilePath()
+    If Len(jsonPath) = 0 Then Exit Sub
+
+    Dim jsonText As String
+    jsonText = ReadUtf8TextFile(jsonPath)
+    If Len(Trim$(jsonText)) = 0 Then
+        MsgBox "JSONファイルが空です。", vbExclamation
+        Exit Sub
+    End If
+
+    Dim root As Object
+    Set root = ParseJsonObject(jsonText)
+
+    If Not root.Exists("点検日") Then
+        MsgBox "JSONに「点検日」がありません。", vbExclamation
+        Exit Sub
+    End If
+
+    If Not root.Exists("データ一覧") Then
+        MsgBox "JSONに「データ一覧」がありません。", vbExclamation
+        Exit Sub
+    End If
+
+    Dim inspectionDateKey As String
+    inspectionDateKey = NormalizeDateKey(CStr(root("点検日")))
+    If Len(inspectionDateKey) = 0 Then
+        MsgBox "JSONの「点検日」を日付として解釈できません。値: " & CStr(root("点検日")), vbExclamation
+        Exit Sub
+    End If
+
+    Dim targetColumn As Long
+    targetColumn = FindDateColumn(ws, DATE_HEADER_ROW, inspectionDateKey)
+    If targetColumn = 0 Then
+        MsgBox "記録シート4行目に、JSONの点検日 " & inspectionDateKey & " と一致する列が見つかりません。既存データは変更していません。", vbExclamation
+        Exit Sub
+    End If
+
+    Dim facilities As Object
+    Set facilities = BuildFacilityMap()
+
+    Dim itemAliasMap As Object
+    Set itemAliasMap = BuildItemAliasMap()
+
+    Dim layout As Object
+    Set layout = BuildSheetLayoutMap(ws, facilities)
+
+    Dim measurementRows As Object
+    Set measurementRows = layout("measurement")
+    Dim timeRows As Object
+    Set timeRows = layout("time")
+
+    Dim writePlans As Collection
+    Set writePlans = New Collection
+
+    Dim skippedEmptyCount As Long
+    Dim skippedUnknownFacility As Long
+    Dim skippedUnknownItem As Long
+    Dim skippedAmbiguousTime As Long
+
+    BuildWritePlans root("データ一覧"), facilities, itemAliasMap, measurementRows, timeRows, targetColumn, _
+                    writePlans, skippedEmptyCount, skippedUnknownFacility, skippedUnknownItem, skippedAmbiguousTime
+
+    If writePlans.Count = 0 Then
+        MsgBox "書き込み対象がありませんでした。" & vbCrLf & _
+               "（空値スキップ: " & skippedEmptyCount & "件 / 施設未一致: " & skippedUnknownFacility & "件 / 項目未一致: " & skippedUnknownItem & "件）", vbInformation
+        Exit Sub
+    End If
+
+    Dim message As String
+    message = "点検日 " & inspectionDateKey & " の列（" & ColumnLetter(targetColumn) & "列）に " & writePlans.Count & " 件書き込みます。" & vbCrLf & vbCrLf & _
+              "空値スキップ: " & skippedEmptyCount & "件" & vbCrLf & _
+              "施設未一致: " & skippedUnknownFacility & "件" & vbCrLf & _
+              "項目未一致: " & skippedUnknownItem & "件" & vbCrLf & _
+              "点検時間スキップ（欄未特定）: " & skippedAmbiguousTime & "件" & vbCrLf & vbCrLf & _
+              "続行しますか？"
+
+    If MsgBox(message, vbQuestion + vbYesNo, "JSON取込確認") <> vbYes Then Exit Sub
+
+    ApplyWritePlans ws, writePlans
+
+    MsgBox "取込が完了しました。" & vbCrLf & _
+           "書き込み件数: " & writePlans.Count & "件" & vbCrLf & _
+           "空値スキップ: " & skippedEmptyCount & "件" & vbCrLf & _
+           "施設未一致: " & skippedUnknownFacility & "件" & vbCrLf & _
+           "項目未一致: " & skippedUnknownItem & "件" & vbCrLf & _
+           "点検時間スキップ（欄未特定）: " & skippedAmbiguousTime & "件", vbInformation
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "JSON取込中にエラーが発生しました。" & vbCrLf & _
+           "原因: " & Err.Description, vbCritical
+End Sub
+
+Private Sub BuildWritePlans(ByVal dataList As Variant, ByVal facilities As Object, ByVal itemAliasMap As Object, _
+                            ByVal measurementRows As Object, ByVal timeRows As Object, ByVal targetColumn As Long, _
+                            ByRef writePlans As Collection, ByRef skippedEmptyCount As Long, ByRef skippedUnknownFacility As Long, _
+                            ByRef skippedUnknownItem As Long, ByRef skippedAmbiguousTime As Long)
+    If Not IsObject(dataList) Then Exit Sub
+
+    Dim entry As Variant
+    For Each entry In dataList
+        If Not IsObject(entry) Then GoTo NextEntry
+
+        Dim facilityKey As String
+        facilityKey = ResolveFacilityKey(entry, facilities)
+        If Len(facilityKey) = 0 Then
+            skippedUnknownFacility = skippedUnknownFacility + 1
+            GoTo NextEntry
+        End If
+
+        Dim measurements As Variant
+        measurements = Empty
+        If entry.Exists("測定値") Then measurements = entry("測定値")
+
+        If IsObject(measurements) Then
+            Dim measureName As Variant
+            For Each measureName In measurements.Keys
+                Dim rawValue As Variant
+                rawValue = measurements(measureName)
+
+                If IsJsonBlank(rawValue) Then
+                    skippedEmptyCount = skippedEmptyCount + 1
+                Else
+                    Dim canonicalItem As String
+                    canonicalItem = CanonicalItemName(CStr(measureName), itemAliasMap)
+
+                    Dim rowKey As String
+                    rowKey = facilityKey & "|" & NormalizeLabel(canonicalItem)
+
+                    If measurementRows.Exists(rowKey) Then
+                        AddWritePlan writePlans, CLng(measurementRows(rowKey)), targetColumn, NormalizeCellValue(rawValue)
+                    Else
+                        skippedUnknownItem = skippedUnknownItem + 1
+                    End If
+                End If
+            Next measureName
+        End If
+
+        If entry.Exists("点検時間") Then
+            Dim timeValue As Variant
+            timeValue = entry("点検時間")
+            If IsJsonBlank(timeValue) Then
+                skippedEmptyCount = skippedEmptyCount + 1
+            Else
+                Dim timeKey As String
+                timeKey = facilityKey & "|" & NormalizeLabel("点検時間")
+
+                If timeRows.Exists(timeKey) Then
+                    AddWritePlan writePlans, CLng(timeRows(timeKey)), targetColumn, NormalizeTimeValue(CStr(timeValue))
+                Else
+                    ' 点検時間欄の場所がシート上で判別できない場合は書き込まない（測定値の反映を優先）。
+                    skippedAmbiguousTime = skippedAmbiguousTime + 1
+                End If
+            End If
+        End If
+NextEntry:
+    Next entry
+End Sub
+
+Private Sub ApplyWritePlans(ByVal ws As Worksheet, ByVal writePlans As Collection)
+    Dim plan As Variant
+    For Each plan In writePlans
+        ws.Cells(CLng(plan("row")), CLng(plan("col"))).Value = plan("value")
+    Next plan
+End Sub
+
+Private Sub AddWritePlan(ByRef writePlans As Collection, ByVal rowNumber As Long, ByVal colNumber As Long, ByVal cellValue As Variant)
+    Dim item As Object
+    Set item = CreateObject("Scripting.Dictionary")
+    item("row") = rowNumber
+    item("col") = colNumber
+    item("value") = cellValue
+    writePlans.Add item
+End Sub
+
+Private Function BuildSheetLayoutMap(ByVal ws As Worksheet, ByVal facilities As Object) As Object
+    Dim result As Object
+    Set result = CreateObject("Scripting.Dictionary")
+
+    Dim measurementRows As Object
+    Set measurementRows = CreateObject("Scripting.Dictionary")
+    Dim timeRows As Object
+    Set timeRows = CreateObject("Scripting.Dictionary")
+
+    Dim canonicalItems As Variant
+    canonicalItems = CanonicalItemsByPriority()
+
+    Dim usedLastRow As Long
+    usedLastRow = ws.UsedRange.Row + ws.UsedRange.Rows.Count - 1
+
+    Dim currentFacilityKey As String
+    Dim r As Long
+    For r = 1 To usedLastRow
+        Dim rowText As String
+        rowText = NormalizeLabel(CollectRowLabelText(ws, r, LABEL_SCAN_COLUMNS))
+        If Len(rowText) = 0 Then GoTo ContinueLoop
+
+        Dim facilityInRow As String
+        facilityInRow = ResolveFacilityFromRow(rowText, facilities)
+        If Len(facilityInRow) > 0 Then currentFacilityKey = facilityInRow
+
+        If Len(currentFacilityKey) = 0 Then GoTo ContinueLoop
+
+        Dim matchedItem As String
+        matchedItem = ResolveItemFromRow(rowText, canonicalItems)
+        If Len(matchedItem) = 0 Then GoTo ContinueLoop
+
+        Dim key As String
+        key = currentFacilityKey & "|" & NormalizeLabel(matchedItem)
+
+        If matchedItem = "点検時間" Then
+            If Not timeRows.Exists(key) Then timeRows(key) = r
+        Else
+            If Not measurementRows.Exists(key) Then measurementRows(key) = r
+        End If
+ContinueLoop:
+    Next r
+
+    result("measurement") = measurementRows
+    result("time") = timeRows
+    Set BuildSheetLayoutMap = result
+End Function
+
+Private Function CollectRowLabelText(ByVal ws As Worksheet, ByVal rowNumber As Long, ByVal maxLabelCol As Long) As String
+    Dim parts As Collection
+    Set parts = New Collection
+
+    Dim c As Long
+    For c = 1 To maxLabelCol
+        Dim textValue As String
+        textValue = Trim$(GetCellDisplayText(ws.Cells(rowNumber, c)))
+        If Len(textValue) > 0 Then parts.Add textValue
+    Next c
+
+    Dim i As Long
+    Dim merged As String
+    For i = 1 To parts.Count
+        merged = merged & " " & CStr(parts(i))
+    Next i
+
+    CollectRowLabelText = Trim$(merged)
+End Function
+
+Private Function GetCellDisplayText(ByVal cell As Range) As String
+    Dim target As Range
+    If cell.MergeCells Then
+        Set target = cell.MergeArea.Cells(1, 1)
+    Else
+        Set target = cell
+    End If
+    GetCellDisplayText = CStr(target.Value)
+End Function
+
+Private Function ResolveFacilityFromRow(ByVal normalizedRowText As String, ByVal facilities As Object) As String
+    Dim facilityKey As Variant
+    For Each facilityKey In facilities.Keys
+        Dim aliases As Collection
+        Set aliases = facilities(facilityKey)("aliases")
+
+        Dim aliasValue As Variant
+        For Each aliasValue In aliases
+            If InStr(1, normalizedRowText, CStr(aliasValue), vbTextCompare) > 0 Then
+                ResolveFacilityFromRow = CStr(facilityKey)
+                Exit Function
+            End If
+        Next aliasValue
+    Next facilityKey
+End Function
+
+Private Function ResolveItemFromRow(ByVal normalizedRowText As String, ByVal canonicalItems As Variant) As String
+    Dim i As Long
+    For i = LBound(canonicalItems) To UBound(canonicalItems)
+        Dim itemName As String
+        itemName = CStr(canonicalItems(i))
+
+        If InStr(1, normalizedRowText, NormalizeLabel(itemName), vbTextCompare) > 0 Then
+            ResolveItemFromRow = itemName
+            Exit Function
+        End If
+    Next i
+End Function
+
+Private Function CanonicalItemsByPriority() As Variant
+    CanonicalItemsByPriority = Array( _
+        "地下燃料 移送カウンター値合計", _
+        "地下燃料 移送カウンター値", _
+        "上水メーター（親）", _
+        "上水メーター（子）", _
+        "流量（深田）", _
+        "流量（酒倉）", _
+        "小出槽 油量", _
+        "点検時間", _
+        "上水メーター", _
+        "井水メーター", _
+        "電力量", _
+        "小出槽", _
+        "流量" _
+    )
+End Function
+
+Private Function BuildFacilityMap() As Object
+    Dim map As Object
+    Set map = CreateObject("Scripting.Dictionary")
+
+    AddFacility map, "ryokuen", "緑苑"
+    AddFacility map, "fukada_sakagura", "深田酒倉"
+    AddFacility map, "kawabe", "川辺"
+    AddFacility map, "yaotsu", "八百津"
+    AddFacility map, "wachi", "和知"
+    AddFacility map, "kanayama_pump", "兼山ポンプ場"
+    AddFacility map, "nakaedo", "中恵土"
+    AddFacility map, "d_point", "Ｄ点（中屋川排水放流口）", "D点（中屋川排水放流口）"
+    AddFacility map, "a_point", "Ａ点（三井川放流口）", "A点（三井川放流口）"
+    AddFacility map, "kawashima_pump", "川島ポンプ場"
+    AddFacility map, "kawashima_daini_nonino", "川島第二の二（環境楽園）"
+    AddFacility map, "kawashima_daini", "川島第二"
+    AddFacility map, "komeno", "米野"
+    AddFacility map, "b_point", "Ｂ点（中屋川放流口）", "B点（中屋川放流口）"
+    AddFacility map, "nagamori_pump", "長森ポンプ場"
+    AddFacility map, "tobu_daini", "東部第二"
+    AddFacility map, "c_point", "Ｃ点（中部排水放流口）", "C点（中部排水放流口）"
+    AddFacility map, "e_point", "Ｅ点（徳田支線放流口）", "E点（徳田支線放流口）"
+    AddFacility map, "shimohaguri", "下羽栗"
+    AddFacility map, "ginan_pump", "岐南ポンプ場"
+    AddFacility map, "ginan_nishi", "岐南西"
+    AddFacility map, "umematsu", "梅松"
+    AddFacility map, "tobu_daiichi", "東部第一"
+    AddFacility map, "akemi", "芥見"
+
+    Set BuildFacilityMap = map
+End Function
+
+Private Sub AddFacility(ByVal map As Object, ByVal facilityKey As String, ByVal facilityName As String, ParamArray aliases() As Variant)
+    Dim item As Object
+    Set item = CreateObject("Scripting.Dictionary")
+
+    item("name") = facilityName
+
+    Dim aliasCollection As Collection
+    Set aliasCollection = New Collection
+    aliasCollection.Add NormalizeLabel(facilityName)
+
+    Dim i As Long
+    For i = LBound(aliases) To UBound(aliases)
+        aliasCollection.Add NormalizeLabel(CStr(aliases(i)))
+    Next i
+
+    item("aliases") = aliasCollection
+    map(facilityKey) = item
+End Sub
+
+Private Function BuildItemAliasMap() As Object
+    Dim map As Object
+    Set map = CreateObject("Scripting.Dictionary")
+
+    AddItemAlias map, "電力量", "電力"
+    AddItemAlias map, "流量"
+    AddItemAlias map, "流量（深田）", "流量(深田)"
+    AddItemAlias map, "流量（酒倉）", "流量(酒倉)"
+    AddItemAlias map, "上水メーター", "上水メータ"
+    AddItemAlias map, "上水メーター（親）", "上水メーター(親)", "上水メータ（親）", "上水メータ(親)"
+    AddItemAlias map, "上水メーター（子）", "上水メーター(子)", "上水メータ（子）", "上水メータ(子)"
+    AddItemAlias map, "地下燃料 移送カウンター値", "地下燃料移送カウンター値"
+    AddItemAlias map, "地下燃料 移送カウンター値合計", "地下燃料移送カウンター値合計", "地下燃料 移送カウンター値 計"
+    AddItemAlias map, "小出槽"
+    AddItemAlias map, "小出槽 油量", "小出槽油量"
+    AddItemAlias map, "井水メーター", "井水メータ"
+    AddItemAlias map, "点検時間"
+
+    Set BuildItemAliasMap = map
+End Function
+
+Private Sub AddItemAlias(ByVal map As Object, ByVal canonicalName As String, ParamArray aliases() As Variant)
+    Dim canonicalKey As String
+    canonicalKey = NormalizeLabel(canonicalName)
+    map(canonicalKey) = canonicalName
+
+    Dim i As Long
+    For i = LBound(aliases) To UBound(aliases)
+        map(NormalizeLabel(CStr(aliases(i)))) = canonicalName
+    Next i
+End Sub
+
+Private Function CanonicalItemName(ByVal rawName As String, ByVal itemAliasMap As Object) As String
+    Dim normalized As String
+    normalized = NormalizeLabel(rawName)
+
+    If itemAliasMap.Exists(normalized) Then
+        CanonicalItemName = CStr(itemAliasMap(normalized))
+    Else
+        CanonicalItemName = rawName
+    End If
+End Function
+
+Private Function ResolveFacilityKey(ByVal entry As Object, ByVal facilities As Object) As String
+    If entry.Exists("施設キー") Then
+        Dim keyValue As String
+        keyValue = Trim$(CStr(entry("施設キー")))
+        If facilities.Exists(keyValue) Then
+            ResolveFacilityKey = keyValue
+            Exit Function
+        End If
+    End If
+
+    If entry.Exists("施設名") Then
+        Dim normalizedName As String
+        normalizedName = NormalizeLabel(CStr(entry("施設名")))
+
+        Dim facilityKey As Variant
+        For Each facilityKey In facilities.Keys
+            If NormalizeLabel(CStr(facilities(facilityKey)("name"))) = normalizedName Then
+                ResolveFacilityKey = CStr(facilityKey)
+                Exit Function
+            End If
+        Next facilityKey
+    End If
+End Function
+
+Private Function FindDateColumn(ByVal ws As Worksheet, ByVal headerRow As Long, ByVal targetDateKey As String) As Long
+    Dim lastCol As Long
+    lastCol = ws.Cells(headerRow, ws.Columns.Count).End(xlToLeft).Column
+
+    Dim c As Long
+    For c = 1 To lastCol
+        Dim key As String
+        key = NormalizeDateKey(ws.Cells(headerRow, c).Value)
+        If key = targetDateKey Then
+            FindDateColumn = c
+            Exit Function
+        End If
+    Next c
+End Function
+
+Private Function NormalizeDateKey(ByVal value As Variant) As String
+    On Error GoTo HandleFail
+
+    If IsDate(value) Then
+        NormalizeDateKey = Format$(CDate(value), "yyyy-mm-dd")
+        Exit Function
+    End If
+
+    Dim s As String
+    s = Trim$(CStr(value))
+    If Len(s) = 0 Then Exit Function
+
+    s = Replace(s, "年", "-")
+    s = Replace(s, "月", "-")
+    s = Replace(s, "日", "")
+    s = Replace(s, "/", "-")
+    s = Replace(s, ".", "-")
+
+    If IsDate(s) Then
+        NormalizeDateKey = Format$(CDate(s), "yyyy-mm-dd")
+        Exit Function
+    End If
+
+    If Len(s) = 8 And IsNumeric(s) Then
+        NormalizeDateKey = Left$(s, 4) & "-" & Mid$(s, 5, 2) & "-" & Right$(s, 2)
+        Exit Function
+    End If
+    Exit Function
+
+HandleFail:
+    NormalizeDateKey = ""
+End Function
+
+Private Function NormalizeLabel(ByVal value As String) As String
+    Dim s As String
+    s = Trim$(value)
+
+    s = Replace(s, " ", "")
+    s = Replace(s, "　", "")
+    s = Replace(s, vbTab, "")
+    s = Replace(s, "（", "(")
+    s = Replace(s, "）", ")")
+
+    NormalizeLabel = LCase$(s)
+End Function
+
+Private Function ColumnLetter(ByVal columnNumber As Long) As String
+    ColumnLetter = Split(Cells(1, columnNumber).Address(False, False), "1")(0)
+End Function
+
+Private Function PickJsonFilePath() As String
+    Dim picker As Object
+    Set picker = Application.FileDialog(msoFileDialogFilePicker)
+
+    With picker
+        .Title = "取込むJSONファイルを選択してください"
+        .AllowMultiSelect = False
+        .Filters.Clear
+        .Filters.Add "JSON", "*.json"
+        If .Show <> -1 Then Exit Function
+        PickJsonFilePath = .SelectedItems(1)
+    End With
+End Function
+
+Private Function ReadUtf8TextFile(ByVal filePath As String) As String
+    Dim stm As Object
+    Set stm = CreateObject("ADODB.Stream")
+
+    stm.Type = 2
+    stm.Charset = "utf-8"
+    stm.Open
+    stm.LoadFromFile filePath
+    ReadUtf8TextFile = stm.ReadText(-1)
+    stm.Close
+End Function
+
+Private Function IsJsonBlank(ByVal value As Variant) As Boolean
+    If IsObject(value) Then
+        IsJsonBlank = False
+        Exit Function
+    End If
+
+    If IsNull(value) Then
+        IsJsonBlank = True
+    ElseIf VarType(value) = vbString Then
+        IsJsonBlank = Len(Trim$(CStr(value))) = 0
+    Else
+        IsJsonBlank = False
+    End If
+End Function
+
+Private Function NormalizeCellValue(ByVal rawValue As Variant) As Variant
+    If IsNumeric(rawValue) Then
+        NormalizeCellValue = CDbl(rawValue)
+    Else
+        NormalizeCellValue = CStr(rawValue)
+    End If
+End Function
+
+Private Function NormalizeTimeValue(ByVal rawTime As String) As String
+    Dim s As String
+    s = Trim$(rawTime)
+
+    If Len(s) = 0 Then
+        NormalizeTimeValue = s
+        Exit Function
+    End If
+
+    If IsDate(s) Then
+        NormalizeTimeValue = Format$(CDate(s), "hh:nn")
+        Exit Function
+    End If
+
+    NormalizeTimeValue = s
+End Function
+
+' ===== JSON parser (external reference不要) =====
+
+Private Type JsonState
+    Source As String
+    Position As Long
+    Length As Long
+End Type
+
+Private Function ParseJsonObject(ByVal jsonText As String) As Object
+    Dim st As JsonState
+    st.Source = jsonText
+    st.Position = 1
+    st.Length = Len(jsonText)
+
+    Dim value As Variant
+    value = ParseJsonValue(st)
+
+    If Not IsObject(value) Then Err.Raise vbObjectError + 2100, , "JSONルートがオブジェクトではありません。"
+    Set ParseJsonObject = value
+End Function
+
+Private Function ParseJsonValue(ByRef st As JsonState) As Variant
+    SkipJsonWhitespace st
+
+    Dim ch As String
+    ch = PeekJsonChar(st)
+
+    Select Case ch
+        Case "{"
+            Set ParseJsonValue = ParseJsonDictionary(st)
+        Case "["
+            Set ParseJsonValue = ParseJsonArray(st)
+        Case """"
+            ParseJsonValue = ParseJsonString(st)
+        Case "t"
+            ExpectJsonLiteral st, "true"
+            ParseJsonValue = True
+        Case "f"
+            ExpectJsonLiteral st, "false"
+            ParseJsonValue = False
+        Case "n"
+            ExpectJsonLiteral st, "null"
+            ParseJsonValue = Null
+        Case Else
+            ParseJsonValue = ParseJsonNumber(st)
+    End Select
+
+    SkipJsonWhitespace st
+End Function
+
+Private Function ParseJsonDictionary(ByRef st As JsonState) As Object
+    Dim dict As Object
+    Set dict = CreateObject("Scripting.Dictionary")
+
+    ConsumeJsonChar st, "{"
+    SkipJsonWhitespace st
+
+    If PeekJsonChar(st) = "}" Then
+        ConsumeJsonChar st, "}"
+        Set ParseJsonDictionary = dict
+        Exit Function
+    End If
+
+    Do
+        SkipJsonWhitespace st
+        Dim key As String
+        key = ParseJsonString(st)
+
+        SkipJsonWhitespace st
+        ConsumeJsonChar st, ":"
+        SkipJsonWhitespace st
+
+        Dim parsedValue As Variant
+        parsedValue = ParseJsonValue(st)
+        If IsObject(parsedValue) Then
+            Set dict(key) = parsedValue
+        Else
+            dict(key) = parsedValue
+        End If
+
+        SkipJsonWhitespace st
+        Dim nextCh As String
+        nextCh = PeekJsonChar(st)
+
+        If nextCh = "}" Then
+            ConsumeJsonChar st, "}"
+            Exit Do
+        End If
+
+        ConsumeJsonChar st, ","
+    Loop
+
+    Set ParseJsonDictionary = dict
+End Function
+
+Private Function ParseJsonArray(ByRef st As JsonState) As Collection
+    Dim arr As New Collection
+
+    ConsumeJsonChar st, "["
+    SkipJsonWhitespace st
+
+    If PeekJsonChar(st) = "]" Then
+        ConsumeJsonChar st, "]"
+        Set ParseJsonArray = arr
+        Exit Function
+    End If
+
+    Do
+        arr.Add ParseJsonValue(st)
+        SkipJsonWhitespace st
+
+        Dim nextCh As String
+        nextCh = PeekJsonChar(st)
+
+        If nextCh = "]" Then
+            ConsumeJsonChar st, "]"
+            Exit Do
+        End If
+
+        ConsumeJsonChar st, ","
+    Loop
+
+    Set ParseJsonArray = arr
+End Function
+
+Private Function ParseJsonString(ByRef st As JsonState) As String
+    ConsumeJsonChar st, """"
+
+    Dim result As String
+    result = ""
+
+    Do While st.Position <= st.Length
+        Dim ch As String
+        ch = Mid$(st.Source, st.Position, 1)
+        st.Position = st.Position + 1
+
+        If ch = """" Then
+            ParseJsonString = result
+            Exit Function
+        ElseIf ch = "\" Then
+            If st.Position > st.Length Then Err.Raise vbObjectError + 2101, , "JSON文字列のエスケープが不正です。"
+
+            Dim esc As String
+            esc = Mid$(st.Source, st.Position, 1)
+            st.Position = st.Position + 1
+
+            Select Case esc
+                Case """", "\", "/"
+                    result = result & esc
+                Case "b"
+                    result = result & Chr$(8)
+                Case "f"
+                    result = result & Chr$(12)
+                Case "n"
+                    result = result & vbLf
+                Case "r"
+                    result = result & vbCr
+                Case "t"
+                    result = result & vbTab
+                Case "u"
+                    result = result & ParseJsonUnicodeEscape(st)
+                Case Else
+                    Err.Raise vbObjectError + 2102, , "JSON文字列のエスケープが不正です: \\" & esc
+            End Select
+        Else
+            result = result & ch
+        End If
+    Loop
+
+    Err.Raise vbObjectError + 2103, , "JSON文字列が閉じられていません。"
+End Function
+
+Private Function ParseJsonUnicodeEscape(ByRef st As JsonState) As String
+    If st.Position + 3 > st.Length Then Err.Raise vbObjectError + 2104, , "Unicodeエスケープが不正です。"
+
+    Dim hexCode As String
+    hexCode = Mid$(st.Source, st.Position, 4)
+    st.Position = st.Position + 4
+
+    If Not IsHex4(hexCode) Then Err.Raise vbObjectError + 2105, , "Unicodeエスケープが不正です: " & hexCode
+    ParseJsonUnicodeEscape = ChrW$(CLng("&H" & hexCode))
+End Function
+
+Private Function IsHex4(ByVal value As String) As Boolean
+    Dim i As Long
+    If Len(value) <> 4 Then Exit Function
+
+    For i = 1 To 4
+        Dim ch As String
+        ch = Mid$(value, i, 1)
+        If InStr(1, "0123456789abcdefABCDEF", ch, vbBinaryCompare) = 0 Then Exit Function
+    Next i
+
+    IsHex4 = True
+End Function
+
+Private Function ParseJsonNumber(ByRef st As JsonState) As Variant
+    Dim startPos As Long
+    startPos = st.Position
+
+    Do While st.Position <= st.Length
+        Dim ch As String
+        ch = Mid$(st.Source, st.Position, 1)
+
+        If InStr(1, "0123456789+-.eE", ch, vbBinaryCompare) = 0 Then Exit Do
+        st.Position = st.Position + 1
+    Loop
+
+    Dim token As String
+    token = Mid$(st.Source, startPos, st.Position - startPos)
+
+    If Len(token) = 0 Then Err.Raise vbObjectError + 2106, , "JSONの値を解析できません。"
+
+    ParseJsonNumber = CDbl(token)
+End Function
+
+Private Sub ExpectJsonLiteral(ByRef st As JsonState, ByVal literal As String)
+    Dim segment As String
+    segment = Mid$(st.Source, st.Position, Len(literal))
+
+    If segment <> literal Then Err.Raise vbObjectError + 2107, , "JSONリテラルが不正です。期待値: " & literal
+    st.Position = st.Position + Len(literal)
+End Sub
+
+Private Sub ConsumeJsonChar(ByRef st As JsonState, ByVal expectedChar As String)
+    Dim ch As String
+    ch = PeekJsonChar(st)
+    If ch <> expectedChar Then
+        Err.Raise vbObjectError + 2108, , "JSON構文エラー。期待値: '" & expectedChar & "' 実値: '" & ch & "'"
+    End If
+    st.Position = st.Position + 1
+End Sub
+
+Private Function PeekJsonChar(ByRef st As JsonState) As String
+    If st.Position > st.Length Then
+        PeekJsonChar = ""
+    Else
+        PeekJsonChar = Mid$(st.Source, st.Position, 1)
+    End If
+End Function
+
+Private Sub SkipJsonWhitespace(ByRef st As JsonState)
+    Do While st.Position <= st.Length
+        Dim ch As String
+        ch = Mid$(st.Source, st.Position, 1)
+
+        Select Case ch
+            Case " ", vbTab, vbCr, vbLf
+                st.Position = st.Position + 1
+            Case Else
+                Exit Do
+        End Select
+    Loop
+End Sub
