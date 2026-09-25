@@ -1,4 +1,4 @@
-Attribute VB_Name = "InspectionJsonImporter"
+﻿Attribute VB_Name = "InspectionJsonImporter"
 Option Explicit
 
 Private Const TARGET_SHEET_NAME As String = "記録"
