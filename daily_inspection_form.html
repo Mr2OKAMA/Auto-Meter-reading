@@ -372,9 +372,10 @@
       'tobu_daiichi',
       'akemi'
     ];
+    const orderedFacilityKeySet = new Set(orderedFacilityKeys);
     const facilityByKey = Object.fromEntries(allFacilities.map(facility => [facility.key, facility]));
     const orderedFacilities = orderedFacilityKeys.map(key => facilityByKey[key]).filter(Boolean);
-    const remainingFacilities = allFacilities.filter(facility => !orderedFacilityKeys.includes(facility.key));
+    const remainingFacilities = allFacilities.filter(facility => !orderedFacilityKeySet.has(facility.key));
     const facilities = [...orderedFacilities, ...remainingFacilities];
     const facilityByName = Object.fromEntries(facilities.map(facility => [facility.name, facility]));
     const DRAFT_STORAGE_KEY = 'auto_meter_reading_inspection_draft_v2';
