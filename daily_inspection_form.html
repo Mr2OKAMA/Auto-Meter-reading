@@ -373,7 +373,9 @@
       'akemi'
     ];
     const facilityByKey = Object.fromEntries(allFacilities.map(facility => [facility.key, facility]));
-    const facilities = orderedFacilityKeys.map(key => facilityByKey[key]).filter(Boolean);
+    const orderedFacilities = orderedFacilityKeys.map(key => facilityByKey[key]).filter(Boolean);
+    const remainingFacilities = allFacilities.filter(facility => !orderedFacilityKeys.includes(facility.key));
+    const facilities = [...orderedFacilities, ...remainingFacilities];
     const facilityByName = Object.fromEntries(facilities.map(facility => [facility.name, facility]));
     const DRAFT_STORAGE_KEY = 'auto_meter_reading_inspection_draft_v2';
     const LEGACY_DRAFT_STORAGE_KEYS = ['auto_meter_reading_inspection_draft_v1'];
