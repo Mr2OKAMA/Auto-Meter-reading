@@ -140,6 +140,10 @@ Public Sub Json点検データ取込_セルフテスト()
     AssertEquals "1000000000000001", CStr(largeRoot("n")), "大きな整数は文字列保持"
     AssertEquals "1000000000000001", CStr(NormalizeCellValue(largeRoot("n"))), "書き込み前も精度保持"
 
+    Dim decimalRoot As Object
+    Set decimalRoot = ParseJsonObject("{""n"":0.1234567890123456789}")
+    AssertEquals "0.1234567890123456789", CStr(decimalRoot("n")), "高精度小数は文字列保持"
+
     AssertParseFail "{""点検日"":""2026-09-25""}garbage", "末尾ゴミ検知"
     AssertParseFail "{""n"":+1}", "不正数値(先頭プラス)検知"
     AssertParseFail "{""n"":01}", "不正数値(先頭ゼロ)検知"
@@ -325,7 +329,7 @@ Private Function GetCellDisplayText(ByVal cell As Range) As String
     Else
         Set target = cell
     End If
-    GetCellDisplayText = CStr(target.Value)
+    GetCellDisplayText = CStr(target.Text)
 End Function
 
 Private Function ResolveFacilityFromRow(ByVal normalizedRowTokens As Collection, ByVal normalizedRowText As String, ByVal facilities As Object) As String
@@ -1012,7 +1016,8 @@ Private Function ParseJsonNumber(ByRef st As JsonState) As Variant
             ParseJsonNumber = CDbl(token)
         End If
     Else
-        ParseJsonNumber = CDbl(token)
+        ' 小数・指数表現は文字列のまま保持し、桁落ちを防ぐ。
+        ParseJsonNumber = token
     End If
 End Function
 
