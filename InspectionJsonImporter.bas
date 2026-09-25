@@ -82,7 +82,7 @@ Public Sub Json点検データ取込_記録シート()
     End If
 
     Dim message As String
-    message = "点検日 " & inspectionDateKey & " の列（" & ColumnLetter(targetColumn) & "列）に " & writePlans.Count & " 件書き込みます。" & vbCrLf & vbCrLf & _
+    message = "点検日 " & inspectionDateKey & " の列（" & ColumnLetter(ws, targetColumn) & "列）に " & writePlans.Count & " 件書き込みます。" & vbCrLf & vbCrLf & _
               "空値スキップ: " & skippedEmptyCount & "件" & vbCrLf & _
               "施設未一致: " & skippedUnknownFacility & "件" & vbCrLf & _
               "項目未一致: " & skippedUnknownItem & "件" & vbCrLf & _
@@ -470,7 +470,9 @@ Private Function NormalizeDateKey(ByVal value As Variant) As String
     End If
 
     If Len(s) = 8 And IsNumeric(s) Then
-        NormalizeDateKey = Left$(s, 4) & "-" & Mid$(s, 5, 2) & "-" & Right$(s, 2)
+        Dim ymd As String
+        ymd = Left$(s, 4) & "-" & Mid$(s, 5, 2) & "-" & Right$(s, 2)
+        If IsDate(ymd) Then NormalizeDateKey = Format$(CDate(ymd), "yyyy-mm-dd")
         Exit Function
     End If
     Exit Function
@@ -492,8 +494,8 @@ Private Function NormalizeLabel(ByVal value As String) As String
     NormalizeLabel = LCase$(s)
 End Function
 
-Private Function ColumnLetter(ByVal columnNumber As Long) As String
-    ColumnLetter = Split(Cells(1, columnNumber).Address(False, False), "1")(0)
+Private Function ColumnLetter(ByVal ws As Worksheet, ByVal columnNumber As Long) As String
+    ColumnLetter = Split(ws.Cells(1, columnNumber).Address(False, False), "1")(0)
 End Function
 
 Private Function PickJsonFilePath() As String
@@ -742,7 +744,31 @@ Private Function ParseJsonUnicodeEscape(ByRef st As JsonState) As String
     st.Position = st.Position + 4
 
     If Not IsHex4(hexCode) Then Err.Raise vbObjectError + 2105, , "Unicodeエスケープが不正です: " & hexCode
-    ParseJsonUnicodeEscape = ChrW$(CLng("&H" & hexCode))
+
+    Dim highCode As Long
+    highCode = CLng("&H" & hexCode)
+
+    If highCode >= &HD800 And highCode <= &HDBFF Then
+        If st.Position + 5 <= st.Length And Mid$(st.Source, st.Position, 2) = "\u" Then
+            st.Position = st.Position + 2
+            Dim lowHex As String
+            lowHex = Mid$(st.Source, st.Position, 4)
+            st.Position = st.Position + 4
+
+            If Not IsHex4(lowHex) Then Err.Raise vbObjectError + 2109, , "Unicodeサロゲートの下位コードが不正です: " & lowHex
+
+            Dim lowCode As Long
+            lowCode = CLng("&H" & lowHex)
+            If lowCode < &HDC00 Or lowCode > &HDFFF Then Err.Raise vbObjectError + 2110, , "Unicodeサロゲートペアが不正です。"
+
+            ParseJsonUnicodeEscape = ChrW$(highCode) & ChrW$(lowCode)
+            Exit Function
+        Else
+            Err.Raise vbObjectError + 2111, , "Unicodeサロゲートペアが途中で終わっています。"
+        End If
+    End If
+
+    ParseJsonUnicodeEscape = ChrW$(highCode)
 End Function
 
 Private Function IsHex4(ByVal value As String) As Boolean
@@ -775,7 +801,23 @@ Private Function ParseJsonNumber(ByRef st As JsonState) As Variant
 
     If Len(token) = 0 Then Err.Raise vbObjectError + 2106, , "JSONの値を解析できません。"
 
-    ParseJsonNumber = CDbl(token)
+    Dim integerToken As Boolean
+    integerToken = (InStr(1, token, ".", vbBinaryCompare) = 0 And InStr(1, token, "e", vbTextCompare) = 0)
+
+    If integerToken Then
+        Dim digitToken As String
+        digitToken = token
+        digitToken = Replace(digitToken, "+", "")
+        digitToken = Replace(digitToken, "-", "")
+
+        If Len(digitToken) > 15 Then
+            ParseJsonNumber = token
+        Else
+            ParseJsonNumber = CDbl(token)
+        End If
+    Else
+        ParseJsonNumber = CDbl(token)
+    End If
 End Function
 
 Private Sub ExpectJsonLiteral(ByRef st As JsonState, ByVal literal As String)
