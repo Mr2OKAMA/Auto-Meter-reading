@@ -106,6 +106,32 @@ ErrorHandler:
            "原因: " & Err.Description, vbCritical
 End Sub
 
+Public Sub Json点検データ取込_セルフテスト()
+    On Error GoTo ErrorHandler
+
+    AssertEquals "2026-09-25", NormalizeDateKey("2026-09-25"), "日付正規化(yyyy-mm-dd)"
+    AssertEquals "2026-09-25", NormalizeDateKey("2026/9/25"), "日付正規化(yyyy/m/d)"
+    AssertEquals "", NormalizeDateKey("20261340"), "不正日付は不一致"
+
+    Dim aliases As Object
+    Set aliases = BuildItemAliasMap()
+    AssertEquals "電力量", CanonicalItemName("電力", aliases), "項目別名"
+    AssertEquals "流量（深田）", CanonicalItemName("流量(深田)", aliases), "括弧揺れ"
+
+    Dim okRoot As Object
+    Set okRoot = ParseJsonObject("{""点検日"":""2026-09-25"",""データ一覧"":[]}")
+    AssertTrue okRoot.Exists("点検日"), "正常JSON解析"
+
+    AssertParseFail "{""点検日"":""2026-09-25""}garbage", "末尾ゴミ検知"
+    AssertParseFail "{""n"":01}", "不正数値(先頭ゼロ)検知"
+    AssertParseFail "{""n"":1e}", "不正数値(指数欠落)検知"
+
+    MsgBox "セルフテストが完了しました。", vbInformation
+    Exit Sub
+ErrorHandler:
+    MsgBox "セルフテスト失敗: " & Err.Description, vbCritical
+End Sub
+
 Private Sub BuildWritePlans(ByVal dataList As Variant, ByVal facilities As Object, ByVal itemAliasMap As Object, _
                             ByVal measurementRows As Object, ByVal timeRows As Object, ByVal targetColumn As Long, _
                             ByRef writePlans As Collection, ByRef skippedEmptyCount As Long, ByRef skippedUnknownFacility As Long, _
@@ -436,7 +462,11 @@ Private Function FindDateColumn(ByVal ws As Worksheet, ByVal headerRow As Long, 
     lastCol = ws.Cells(headerRow, ws.Columns.Count).End(xlToLeft).Column
 
     Dim c As Long
-    For c = 1 To lastCol
+    Dim startCol As Long
+    startCol = LABEL_SCAN_COLUMNS + 1
+    If startCol > lastCol Then startCol = 1
+
+    For c = startCol To lastCol
         Dim key As String
         key = NormalizeDateKey(ws.Cells(headerRow, c).Value)
         If key = targetDateKey Then
@@ -444,6 +474,16 @@ Private Function FindDateColumn(ByVal ws As Worksheet, ByVal headerRow As Long, 
             Exit Function
         End If
     Next c
+
+    If startCol > 1 Then
+        For c = 1 To startCol - 1
+            key = NormalizeDateKey(ws.Cells(headerRow, c).Value)
+            If key = targetDateKey Then
+                FindDateColumn = c
+                Exit Function
+            End If
+        Next c
+    End If
 End Function
 
 Private Function NormalizeDateKey(ByVal value As Variant) As String
@@ -580,8 +620,10 @@ Private Function ParseJsonObject(ByVal jsonText As String) As Object
 
     Dim value As Variant
     value = ParseJsonValue(st)
+    SkipJsonWhitespace st
 
     If Not IsObject(value) Then Err.Raise vbObjectError + 2100, , "JSONルートがオブジェクトではありません。"
+    If st.Position <= st.Length Then Err.Raise vbObjectError + 2112, , "JSON末尾に不要な文字があります。"
     Set ParseJsonObject = value
 End Function
 
@@ -800,6 +842,7 @@ Private Function ParseJsonNumber(ByRef st As JsonState) As Variant
     token = Mid$(st.Source, startPos, st.Position - startPos)
 
     If Len(token) = 0 Then Err.Raise vbObjectError + 2106, , "JSONの値を解析できません。"
+    If Not IsValidJsonNumberToken(token) Then Err.Raise vbObjectError + 2113, , "JSON数値の形式が不正です: " & token
 
     Dim integerToken As Boolean
     integerToken = (InStr(1, token, ".", vbBinaryCompare) = 0 And InStr(1, token, "e", vbTextCompare) = 0)
@@ -818,6 +861,14 @@ Private Function ParseJsonNumber(ByRef st As JsonState) As Variant
     Else
         ParseJsonNumber = CDbl(token)
     End If
+End Function
+
+Private Function IsValidJsonNumberToken(ByVal token As String) As Boolean
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Pattern = "^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$"
+    re.Global = False
+    IsValidJsonNumberToken = re.Test(token)
 End Function
 
 Private Sub ExpectJsonLiteral(ByRef st As JsonState, ByVal literal As String)
@@ -857,4 +908,28 @@ Private Sub SkipJsonWhitespace(ByRef st As JsonState)
                 Exit Do
         End Select
     Loop
+End Sub
+
+Private Sub AssertEquals(ByVal expected As String, ByVal actual As String, ByVal testName As String)
+    If expected <> actual Then
+        Err.Raise vbObjectError + 2200, , testName & " 期待値=[" & expected & "] 実際=[" & actual & "]"
+    End If
+End Sub
+
+Private Sub AssertTrue(ByVal condition As Boolean, ByVal testName As String)
+    If Not condition Then
+        Err.Raise vbObjectError + 2201, , testName & " が失敗しました。"
+    End If
+End Sub
+
+Private Sub AssertParseFail(ByVal jsonText As String, ByVal testName As String)
+    On Error GoTo ExpectedFail
+    Dim obj As Object
+    Set obj = ParseJsonObject(jsonText)
+    Err.Raise vbObjectError + 2202, , testName & " が失敗しました（本来はエラーになるべき入力を受理しました）。"
+ExpectedFail:
+    If Err.Number = vbObjectError + 2202 Then
+        Err.Raise Err.Number, , Err.Description
+    End If
+    Err.Clear
 End Sub
