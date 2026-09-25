@@ -343,10 +343,40 @@
       }
     ];
 
-    const facilities = facilitySections.flatMap(section =>
+    const allFacilities = facilitySections.flatMap(section =>
       section.facilities.map(facility => ({ ...facility, sectionTitle: section.title }))
     );
-    const facilityByKey = Object.fromEntries(facilities.map(facility => [facility.key, facility]));
+    const orderedFacilityKeys = [
+      'ryokuen',
+      'fukada_sakagura',
+      'kawabe',
+      'yaotsu',
+      'wachi',
+      'kanayama_pump',
+      'nakaedo',
+      'd_point',
+      'a_point',
+      'kawashima_pump',
+      'kawashima_daini_nonino',
+      'kawashima_daini',
+      'komeno',
+      'b_point',
+      'nagamori_pump',
+      'tobu_daini',
+      'c_point',
+      'e_point',
+      'shimohaguri',
+      'ginan_pump',
+      'ginan_nishi',
+      'umematsu',
+      'tobu_daiichi',
+      'akemi'
+    ];
+    const orderedFacilityKeySet = new Set(orderedFacilityKeys);
+    const facilityByKey = Object.fromEntries(allFacilities.map(facility => [facility.key, facility]));
+    const orderedFacilities = orderedFacilityKeys.map(key => facilityByKey[key]).filter(Boolean);
+    const remainingFacilities = allFacilities.filter(facility => !orderedFacilityKeySet.has(facility.key));
+    const facilities = [...orderedFacilities, ...remainingFacilities];
     const facilityByName = Object.fromEntries(facilities.map(facility => [facility.name, facility]));
     const DRAFT_STORAGE_KEY = 'auto_meter_reading_inspection_draft_v2';
     const LEGACY_DRAFT_STORAGE_KEYS = ['auto_meter_reading_inspection_draft_v1'];
@@ -417,30 +447,51 @@
     }
 
     function renderFacilityCard(facility) {
+      const facilityHeadingId = `${facility.key}_facility_heading`;
       return `
-        <div class="bg-white rounded-lg shadow p-4">
-          <h3 class="text-lg font-bold ${facility.headingClass || 'text-blue-600'} mb-4">${escapeHtml(facility.name)} <span class="text-sm font-medium text-gray-500">${escapeHtml(facility.badge || '')}</span></h3>
+        <section class="bg-white rounded-lg shadow p-4" aria-labelledby="${facilityHeadingId}">
+          <h3 id="${facilityHeadingId}" class="text-lg font-bold ${facility.headingClass || 'text-blue-600'} mb-4">
+            ${escapeHtml(facility.name)}
+            <span class="text-sm font-medium text-gray-500">${escapeHtml(facility.badge || '')}</span>
+          </h3>
           <div class="space-y-4">
             ${facility.hasTime ? renderTimeField(facility) : ''}
             ${facility.fields.map(field => renderMeasurementField(facility, field)).join('')}
           </div>
-        </div>
+        </section>
       `;
     }
 
     function renderFacilitySections() {
       const container = document.getElementById('facilitySections');
-      container.innerHTML = facilitySections.map(section => `
+      const sectionGroups = facilities.reduce((groups, facility) => {
+        const lastGroup = groups[groups.length - 1];
+        if (!lastGroup || lastGroup.title !== facility.sectionTitle) {
+          groups.push({ title: facility.sectionTitle, facilities: [facility] });
+        } else {
+          lastGroup.facilities.push(facility);
+        }
+        return groups;
+      }, []);
+
+      container.innerHTML = `
         <section class="space-y-4">
           <div class="px-1">
-            <h2 class="text-lg font-semibold text-gray-700 mb-1">${section.icon} ${escapeHtml(section.title)}</h2>
+            <h2 class="text-lg font-semibold text-gray-700 mb-1">🧾 施設一覧</h2>
             <p class="text-xs text-gray-500">JSON保存・前回値表示・一時保存に対応しています。</p>
           </div>
-          <div class="space-y-4">
-            ${section.facilities.map(renderFacilityCard).join('')}
+          <div class="space-y-5">
+            ${sectionGroups.map(group => `
+              <section class="space-y-3">
+                <h3 class="text-sm font-semibold text-gray-500 px-1">${escapeHtml(group.title)}</h3>
+                <div class="space-y-4">
+                  ${group.facilities.map(renderFacilityCard).join('')}
+                </div>
+              </section>
+            `).join('')}
           </div>
         </section>
-      `).join('');
+      `;
     }
 
     function initializeForm() {
