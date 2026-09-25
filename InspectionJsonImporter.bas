@@ -129,10 +129,16 @@ Public Sub Json点検データ取込_セルフテスト()
     AssertEquals "d_point", ResolveFacilityKey(facilityEntry, facilityMap), "施設名全角フォールバック"
     facilityEntry("施設名") = "D点（中屋川排水放流口）"
     AssertEquals "d_point", ResolveFacilityKey(facilityEntry, facilityMap), "施設名別名フォールバック"
+    AssertEquals "kawashima_daini_nonino", ResolveFacilityFromRow(TokenizeNormalizedText("川島第二の二（環境楽園）"), NormalizeLabel("川島第二の二（環境楽園）"), facilityMap), "施設名最長一致"
 
     Dim okRoot As Object
     Set okRoot = ParseJsonObject("{""点検日"":""2026-09-25"",""データ一覧"":[]}")
     AssertTrue okRoot.Exists("点検日"), "正常JSON解析"
+
+    Dim largeRoot As Object
+    Set largeRoot = ParseJsonObject("{""n"":1000000000000001}")
+    AssertEquals "1000000000000001", CStr(largeRoot("n")), "大きな整数は文字列保持"
+    AssertEquals "1000000000000001", CStr(NormalizeCellValue(largeRoot("n"))), "書き込み前も精度保持"
 
     AssertParseFail "{""点検日"":""2026-09-25""}garbage", "末尾ゴミ検知"
     AssertParseFail "{""n"":+1}", "不正数値(先頭プラス)検知"
@@ -252,18 +258,21 @@ Private Function BuildSheetLayoutMap(ByVal ws As Worksheet, ByVal facilities As 
     Dim currentFacilityKey As String
     Dim r As Long
     For r = 1 To usedLastRow
+        Dim rowTokens As Collection
+        Set rowTokens = CollectRowLabelTokens(ws, r, LABEL_SCAN_COLUMNS)
+
         Dim rowText As String
-        rowText = NormalizeLabel(CollectRowLabelText(ws, r, LABEL_SCAN_COLUMNS))
+        rowText = NormalizeLabel(JoinCollection(rowTokens, " "))
         If Len(rowText) = 0 Then GoTo ContinueLoop
 
         Dim facilityInRow As String
-        facilityInRow = ResolveFacilityFromRow(rowText, facilities)
+        facilityInRow = ResolveFacilityFromRow(rowTokens, rowText, facilities)
         If Len(facilityInRow) > 0 Then currentFacilityKey = facilityInRow
 
         If Len(currentFacilityKey) = 0 Then GoTo ContinueLoop
 
         Dim matchedItem As String
-        matchedItem = ResolveItemFromRow(rowText, canonicalItems)
+        matchedItem = ResolveItemFromRow(rowTokens, rowText, canonicalItems)
         If Len(matchedItem) = 0 Then GoTo ContinueLoop
 
         Dim key As String
@@ -282,7 +291,7 @@ ContinueLoop:
     Set BuildSheetLayoutMap = result
 End Function
 
-Private Function CollectRowLabelText(ByVal ws As Worksheet, ByVal rowNumber As Long, ByVal maxLabelCol As Long) As String
+Private Function CollectRowLabelTokens(ByVal ws As Worksheet, ByVal rowNumber As Long, ByVal maxLabelCol As Long) As Collection
     Dim parts As Collection
     Set parts = New Collection
 
@@ -290,16 +299,23 @@ Private Function CollectRowLabelText(ByVal ws As Worksheet, ByVal rowNumber As L
     For c = 1 To maxLabelCol
         Dim textValue As String
         textValue = Trim$(GetCellDisplayText(ws.Cells(rowNumber, c)))
-        If Len(textValue) > 0 Then parts.Add textValue
+        If Len(textValue) > 0 Then parts.Add NormalizeLabel(textValue)
     Next c
+    Set CollectRowLabelTokens = parts
+End Function
 
+Private Function JoinCollection(ByVal items As Collection, ByVal delimiter As String) As String
     Dim i As Long
-    Dim merged As String
-    For i = 1 To parts.Count
-        merged = merged & " " & CStr(parts(i))
+    For i = 1 To items.Count
+        If i > 1 Then JoinCollection = JoinCollection & delimiter
+        JoinCollection = JoinCollection & CStr(items(i))
     Next i
+End Function
 
-    CollectRowLabelText = Trim$(merged)
+Private Function TokenizeNormalizedText(ByVal source As String) As Collection
+    Dim tokens As New Collection
+    tokens.Add NormalizeLabel(source)
+    Set TokenizeNormalizedText = tokens
 End Function
 
 Private Function GetCellDisplayText(ByVal cell As Range) As String
@@ -312,7 +328,10 @@ Private Function GetCellDisplayText(ByVal cell As Range) As String
     GetCellDisplayText = CStr(target.Value)
 End Function
 
-Private Function ResolveFacilityFromRow(ByVal normalizedRowText As String, ByVal facilities As Object) As String
+Private Function ResolveFacilityFromRow(ByVal normalizedRowTokens As Collection, ByVal normalizedRowText As String, ByVal facilities As Object) As String
+    Dim bestKey As String
+    Dim bestLength As Long
+
     Dim facilityKey As Variant
     For Each facilityKey In facilities.Keys
         Dim aliases As Collection
@@ -320,25 +339,56 @@ Private Function ResolveFacilityFromRow(ByVal normalizedRowText As String, ByVal
 
         Dim aliasValue As Variant
         For Each aliasValue In aliases
-            If InStr(1, normalizedRowText, CStr(aliasValue), vbTextCompare) > 0 Then
-                ResolveFacilityFromRow = CStr(facilityKey)
-                Exit Function
+            Dim aliasText As String
+            aliasText = CStr(aliasValue)
+            If Len(aliasText) = 0 Then GoTo ContinueAlias
+
+            If ContainsCollectionValue(normalizedRowTokens, aliasText) Or InStr(1, normalizedRowText, aliasText, vbTextCompare) > 0 Then
+                If Len(aliasText) > bestLength Then
+                    bestLength = Len(aliasText)
+                    bestKey = CStr(facilityKey)
+                End If
             End If
+ContinueAlias:
         Next aliasValue
     Next facilityKey
+
+    ResolveFacilityFromRow = bestKey
 End Function
 
-Private Function ResolveItemFromRow(ByVal normalizedRowText As String, ByVal canonicalItems As Variant) As String
+Private Function ResolveItemFromRow(ByVal normalizedRowTokens As Collection, ByVal normalizedRowText As String, ByVal canonicalItems As Variant) As String
     Dim i As Long
     For i = LBound(canonicalItems) To UBound(canonicalItems)
         Dim itemName As String
         itemName = CStr(canonicalItems(i))
+        Dim normalizedItem As String
+        normalizedItem = NormalizeLabel(itemName)
 
-        If InStr(1, normalizedRowText, NormalizeLabel(itemName), vbTextCompare) > 0 Then
+        If ContainsCollectionValue(normalizedRowTokens, normalizedItem) Then
             ResolveItemFromRow = itemName
             Exit Function
         End If
     Next i
+
+    For i = LBound(canonicalItems) To UBound(canonicalItems)
+        itemName = CStr(canonicalItems(i))
+        normalizedItem = NormalizeLabel(itemName)
+
+        If InStr(1, normalizedRowText, normalizedItem, vbTextCompare) > 0 Then
+            ResolveItemFromRow = itemName
+            Exit Function
+        End If
+    Next i
+End Function
+
+Private Function ContainsCollectionValue(ByVal items As Collection, ByVal expected As String) As Boolean
+    Dim item As Variant
+    For Each item In items
+        If CStr(item) = expected Then
+            ContainsCollectionValue = True
+            Exit Function
+        End If
+    Next item
 End Function
 
 Private Function CanonicalItemsByPriority() As Variant
@@ -630,7 +680,9 @@ Private Function IsJsonBlank(ByVal value As Variant) As Boolean
 End Function
 
 Private Function NormalizeCellValue(ByVal rawValue As Variant) As Variant
-    If IsNumeric(rawValue) Then
+    If VarType(rawValue) = vbString Then
+        NormalizeCellValue = CStr(rawValue)
+    ElseIf IsNumeric(rawValue) Then
         NormalizeCellValue = CDbl(rawValue)
     Else
         NormalizeCellValue = CStr(rawValue)
