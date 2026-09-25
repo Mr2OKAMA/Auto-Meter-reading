@@ -343,10 +343,37 @@
       }
     ];
 
-    const facilities = facilitySections.flatMap(section =>
+    const allFacilities = facilitySections.flatMap(section =>
       section.facilities.map(facility => ({ ...facility, sectionTitle: section.title }))
     );
-    const facilityByKey = Object.fromEntries(facilities.map(facility => [facility.key, facility]));
+    const orderedFacilityKeys = [
+      'ryokuen',
+      'fukada_sakagura',
+      'kawabe',
+      'yaotsu',
+      'wachi',
+      'kanayama_pump',
+      'nakaedo',
+      'd_point',
+      'a_point',
+      'kawashima_pump',
+      'kawashima_daini_nonino',
+      'kawashima_daini',
+      'komeno',
+      'b_point',
+      'nagamori_pump',
+      'tobu_daini',
+      'c_point',
+      'e_point',
+      'shimohaguri',
+      'ginan_pump',
+      'ginan_nishi',
+      'umematsu',
+      'tobu_daiichi',
+      'akemi'
+    ];
+    const facilityByKey = Object.fromEntries(allFacilities.map(facility => [facility.key, facility]));
+    const facilities = orderedFacilityKeys.map(key => facilityByKey[key]).filter(Boolean);
     const facilityByName = Object.fromEntries(facilities.map(facility => [facility.name, facility]));
     const DRAFT_STORAGE_KEY = 'auto_meter_reading_inspection_draft_v2';
     const LEGACY_DRAFT_STORAGE_KEYS = ['auto_meter_reading_inspection_draft_v1'];
@@ -430,17 +457,7 @@
 
     function renderFacilitySections() {
       const container = document.getElementById('facilitySections');
-      container.innerHTML = facilitySections.map(section => `
-        <section class="space-y-4">
-          <div class="px-1">
-            <h2 class="text-lg font-semibold text-gray-700 mb-1">${section.icon} ${escapeHtml(section.title)}</h2>
-            <p class="text-xs text-gray-500">JSON保存・前回値表示・一時保存に対応しています。</p>
-          </div>
-          <div class="space-y-4">
-            ${section.facilities.map(renderFacilityCard).join('')}
-          </div>
-        </section>
-      `).join('');
+      container.innerHTML = facilities.map(renderFacilityCard).join('');
     }
 
     function initializeForm() {
