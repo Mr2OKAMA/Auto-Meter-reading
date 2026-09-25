@@ -143,11 +143,13 @@ Public Sub Json点検データ取込_セルフテスト()
     Dim decimalRoot As Object
     Set decimalRoot = ParseJsonObject("{""n"":0.1234567890123456789}")
     AssertEquals "0.1234567890123456789", CStr(decimalRoot("n")), "高精度小数は文字列保持"
+    AssertEquals "09:05", CStr(NormalizeTimeValue("　9:05　")), "点検時間の全角空白トリム"
 
     AssertParseFail "{""点検日"":""2026-09-25""}garbage", "末尾ゴミ検知"
     AssertParseFail "{""n"":+1}", "不正数値(先頭プラス)検知"
     AssertParseFail "{""n"":01}", "不正数値(先頭ゼロ)検知"
     AssertParseFail "{""n"":1e}", "不正数値(指数欠落)検知"
+    AssertParseFail "{""n"":foo}", "不正トークン検知"
     AssertParseFail "{""t"":""\uDC00""}", "単独下位サロゲート検知"
 
     MsgBox "セルフテストが完了しました。", vbInformation
@@ -693,7 +695,7 @@ End Function
 
 Private Function NormalizeTimeValue(ByVal rawTime As String) As Variant
     Dim s As String
-    s = Trim$(rawTime)
+    s = Trim$(Replace(rawTime, "　", " "))
 
     If Len(s) = 0 Then
         NormalizeTimeValue = Null
@@ -774,8 +776,10 @@ Private Function ParseJsonValue(ByRef st As JsonState) As Variant
         Case "n"
             ExpectJsonLiteral st, "null"
             ParseJsonValue = Null
-        Case Else
+        Case "-", "0" To "9"
             ParseJsonValue = ParseJsonNumber(st)
+        Case Else
+            Err.Raise vbObjectError + 2116, , "JSON値の先頭文字が不正です: '" & ch & "'"
     End Select
 
     SkipJsonWhitespace st
@@ -1029,13 +1033,7 @@ Private Function IsIntegerExactlyRepresentable(ByVal unsignedDigits As String) A
         normalized = Mid$(normalized, 2)
     Loop
 
-    If Len(normalized) < 16 Then
-        IsIntegerExactlyRepresentable = True
-        Exit Function
-    End If
-
-    If Len(normalized) > 16 Then Exit Function
-    IsIntegerExactlyRepresentable = (StrComp(normalized, "9007199254740991", vbBinaryCompare) <= 0)
+    IsIntegerExactlyRepresentable = (Len(normalized) <= 15)
 End Function
 
 Private Function IsValidJsonNumberToken(ByVal token As String) As Boolean
