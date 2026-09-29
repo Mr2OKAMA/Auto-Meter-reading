@@ -134,6 +134,18 @@ Public Sub Json点検データ取込_セルフテスト()
     Dim okRoot As Object
     Set okRoot = ParseJsonObject("{""点検日"":""2026-09-25"",""データ一覧"":[]}")
     AssertTrue okRoot.Exists("点検日"), "正常JSON解析"
+    AssertTrue IsObject(okRoot("データ一覧")), "空配列はCollectionで保持"
+
+    Dim nestedRoot As Object
+    Set nestedRoot = ParseJsonObject("{""d"":{""k"":""v""},""a"":[ 1, { ""x"":true }, [null] ],""s"":""t"",""b"":false,""z"":null}")
+    AssertEquals "v", CStr(nestedRoot("d")("k")), "辞書内の辞書解析"
+    AssertEquals "3", CStr(nestedRoot("a").Count), "辞書内の配列解析"
+    AssertEquals "1", CStr(nestedRoot("a")(1)), "配列内の数値解析"
+    AssertTrue nestedRoot("a")(2)("x"), "配列内の辞書解析"
+    AssertTrue IsNull(nestedRoot("a")(3)(1)), "配列内の配列解析"
+    AssertEquals "t", CStr(nestedRoot("s")), "文字列解析"
+    AssertTrue Not nestedRoot("b"), "真偽値解析"
+    AssertTrue IsNull(nestedRoot("z")), "Null解析"
 
     Dim largeRoot As Object
     Set largeRoot = ParseJsonObject("{""n"":1000000000000001}")
@@ -746,7 +758,11 @@ Private Function ParseJsonObject(ByVal jsonText As String) As Object
     st.Length = Len(jsonText)
 
     Dim value As Variant
-    value = ParseJsonValue(st)
+    If IsJsonContainerStart(st) Then
+        Set value = ParseJsonValue(st)
+    Else
+        value = ParseJsonValue(st)
+    End If
     SkipJsonWhitespace st
 
     If Not IsObject(value) Then Err.Raise vbObjectError + 2100, , "JSONルートがオブジェクトではありません。"
@@ -808,7 +824,11 @@ Private Function ParseJsonDictionary(ByRef st As JsonState) As Object
         SkipJsonWhitespace st
 
         Dim parsedValue As Variant
-        parsedValue = ParseJsonValue(st)
+        If IsJsonContainerStart(st) Then
+            Set parsedValue = ParseJsonValue(st)
+        Else
+            parsedValue = ParseJsonValue(st)
+        End If
         If IsObject(parsedValue) Then
             Set dict(key) = parsedValue
         Else
@@ -844,7 +864,11 @@ Private Function ParseJsonArray(ByRef st As JsonState) As Collection
 
     Do
         Dim parsedItem As Variant
-        parsedItem = ParseJsonValue(st)
+        If IsJsonContainerStart(st) Then
+            Set parsedItem = ParseJsonValue(st)
+        Else
+            parsedItem = ParseJsonValue(st)
+        End If
         If IsObject(parsedItem) Then
             Dim parsedObj As Object
             Set parsedObj = parsedItem
@@ -1062,6 +1086,14 @@ Private Sub ConsumeJsonChar(ByRef st As JsonState, ByVal expectedChar As String)
     End If
     st.Position = st.Position + 1
 End Sub
+
+Private Function IsJsonContainerStart(ByRef st As JsonState) As Boolean
+    SkipJsonWhitespace st
+
+    Dim ch As String
+    ch = PeekJsonChar(st)
+    IsJsonContainerStart = (ch = "{" Or ch = "[")
+End Function
 
 Private Function PeekJsonChar(ByRef st As JsonState) As String
     If st.Position > st.Length Then
