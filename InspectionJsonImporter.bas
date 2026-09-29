@@ -135,6 +135,21 @@ Public Sub Json点検データ取込_セルフテスト()
     Set okRoot = ParseJsonObject("{""点検日"":""2026-09-25"",""データ一覧"":[]}")
     AssertTrue okRoot.Exists("点検日"), "正常JSON解析"
 
+    Dim nestedRoot As Object
+    Set nestedRoot = ParseJsonObject("{""辞書"":{""値"":1},""配列"":[{""値"":2}],""文字列"":""ok"",""数値"":3,""null"":null,""true"":true,""false"":false}")
+    Dim nestedDictionary As Object
+    Set nestedDictionary = nestedRoot("辞書")
+    AssertEquals "1", CStr(nestedDictionary("値")), "辞書内Dictionary解析"
+    Dim nestedArray As Collection
+    Set nestedArray = nestedRoot("配列")
+    AssertTrue nestedArray.Count = 1, "辞書内Collection解析"
+    AssertTrue IsObject(nestedArray(1)), "配列内Dictionary解析"
+    AssertEquals "ok", CStr(nestedRoot("文字列")), "文字列解析"
+    AssertEquals "3", CStr(nestedRoot("数値")), "数値解析"
+    AssertTrue IsNull(nestedRoot("null")), "null解析"
+    AssertTrue nestedRoot("true") = True, "true解析"
+    AssertTrue nestedRoot("false") = False, "false解析"
+
     Dim largeRoot As Object
     Set largeRoot = ParseJsonObject("{""n"":1000000000000001}")
     AssertEquals "1000000000000001", CStr(largeRoot("n")), "大きな整数は文字列保持"
@@ -746,7 +761,12 @@ Private Function ParseJsonObject(ByVal jsonText As String) As Object
     st.Length = Len(jsonText)
 
     Dim value As Variant
-    value = ParseJsonValue(st)
+    SkipJsonWhitespace st
+    If PeekJsonChar(st) = "{" Or PeekJsonChar(st) = "[" Then
+        Set value = ParseJsonValue(st)
+    Else
+        value = ParseJsonValue(st)
+    End If
     SkipJsonWhitespace st
 
     If Not IsObject(value) Then Err.Raise vbObjectError + 2100, , "JSONルートがオブジェクトではありません。"
@@ -808,7 +828,11 @@ Private Function ParseJsonDictionary(ByRef st As JsonState) As Object
         SkipJsonWhitespace st
 
         Dim parsedValue As Variant
-        parsedValue = ParseJsonValue(st)
+        If PeekJsonChar(st) = "{" Or PeekJsonChar(st) = "[" Then
+            Set parsedValue = ParseJsonValue(st)
+        Else
+            parsedValue = ParseJsonValue(st)
+        End If
         If IsObject(parsedValue) Then
             Set dict(key) = parsedValue
         Else
@@ -844,7 +868,12 @@ Private Function ParseJsonArray(ByRef st As JsonState) As Collection
 
     Do
         Dim parsedItem As Variant
-        parsedItem = ParseJsonValue(st)
+        SkipJsonWhitespace st
+        If PeekJsonChar(st) = "{" Or PeekJsonChar(st) = "[" Then
+            Set parsedItem = ParseJsonValue(st)
+        Else
+            parsedItem = ParseJsonValue(st)
+        End If
         If IsObject(parsedItem) Then
             Dim parsedObj As Object
             Set parsedObj = parsedItem
