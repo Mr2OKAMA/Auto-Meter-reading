@@ -137,12 +137,13 @@ Public Sub Json点検データ取込_セルフテスト()
     AssertTrue IsObject(okRoot("データ一覧")), "空配列はCollectionで保持"
 
     Dim nestedRoot As Object
-    Set nestedRoot = ParseJsonObject("{""d"":{""k"":""v""},""a"":[ 1, { ""x"":true }, [null] ],""s"":""t"",""b"":false,""z"":null}")
+    Set nestedRoot = ParseJsonObject("{""d"":{""k"":""v""},""a"":[ 1, { ""x"":true }, [null], ""p"" ],""s"":""t"",""b"":false,""z"":null}")
     AssertEquals "v", CStr(nestedRoot("d")("k")), "辞書内の辞書解析"
-    AssertEquals "3", CStr(nestedRoot("a").Count), "辞書内の配列解析"
+    AssertEquals "4", CStr(nestedRoot("a").Count), "辞書内の配列解析"
     AssertEquals "1", CStr(nestedRoot("a")(1)), "配列内の数値解析"
     AssertTrue nestedRoot("a")(2)("x"), "配列内の辞書解析"
     AssertTrue IsNull(nestedRoot("a")(3)(1)), "配列内の配列解析"
+    AssertEquals "p", CStr(nestedRoot("a")(4)), "オブジェクト後のプリミティブ解析"
     AssertEquals "t", CStr(nestedRoot("s")), "文字列解析"
     AssertTrue Not nestedRoot("b"), "真偽値解析"
     AssertTrue IsNull(nestedRoot("z")), "Null解析"
@@ -823,15 +824,13 @@ Private Function ParseJsonDictionary(ByRef st As JsonState) As Object
         ConsumeJsonChar st, ":"
         SkipJsonWhitespace st
 
-        Dim parsedValue As Variant
         If IsJsonContainerStart(st) Then
-            Set parsedValue = ParseJsonValue(st)
+            Dim parsedObjValue As Object
+            Set parsedObjValue = ParseJsonValue(st)
+            Set dict(key) = parsedObjValue
         Else
+            Dim parsedValue As Variant
             parsedValue = ParseJsonValue(st)
-        End If
-        If IsObject(parsedValue) Then
-            Set dict(key) = parsedValue
-        Else
             dict(key) = parsedValue
         End If
 
@@ -863,17 +862,13 @@ Private Function ParseJsonArray(ByRef st As JsonState) As Collection
     End If
 
     Do
-        Dim parsedItem As Variant
         If IsJsonContainerStart(st) Then
-            Set parsedItem = ParseJsonValue(st)
-        Else
-            parsedItem = ParseJsonValue(st)
-        End If
-        If IsObject(parsedItem) Then
             Dim parsedObj As Object
-            Set parsedObj = parsedItem
+            Set parsedObj = ParseJsonValue(st)
             arr.Add parsedObj
         Else
+            Dim parsedItem As Variant
+            parsedItem = ParseJsonValue(st)
             arr.Add parsedItem
         End If
         SkipJsonWhitespace st
